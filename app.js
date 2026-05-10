@@ -3648,17 +3648,43 @@ function saveHistory() {
 
 function readStorage() {
   try {
+    const legacy = readLegacyStorage();
     const current = localStorage.getItem(storageKey);
-    if (current) return current;
-
-    for (const key of ["rebalance-site-state-v8", "rebalance-site-state-v7", "rebalance-site-state-v6", "rebalance-site-state-v5"]) {
-      const legacy = localStorage.getItem(key);
-      if (legacy) return legacy;
+    if (current) {
+      return shouldPreferLegacyStorage(current, legacy) ? legacy : current;
     }
 
-    return null;
+    return legacy;
   } catch {
     return null;
+  }
+}
+
+function readLegacyStorage() {
+  for (const key of ["rebalance-site-state-v8", "rebalance-site-state-v7", "rebalance-site-state-v6", "rebalance-site-state-v5"]) {
+    const legacy = localStorage.getItem(key);
+    if (legacy) return legacy;
+  }
+  return null;
+}
+
+function shouldPreferLegacyStorage(currentText, legacyText) {
+  if (!legacyText) return false;
+
+  try {
+    const current = JSON.parse(currentText);
+    const legacy = JSON.parse(legacyText);
+    const currentProfile = Array.isArray(current.profiles) ? current.profiles[0] : current;
+    const currentHoldings = Array.isArray(currentProfile?.holdings) ? currentProfile.holdings : [];
+    const legacyHoldings = Array.isArray(legacy?.holdings) ? legacy.holdings : [];
+    const currentSymbols = currentHoldings.map((holding) => holding.symbol).join("|");
+    const defaultSymbols = defaultState.holdings.map((holding) => holding.symbol).join("|");
+    const hasOnlyDefaultProfile = Array.isArray(current.profiles) && current.profiles.length === 1;
+    const hasNoTransactions = !Array.isArray(currentProfile.transactions) || currentProfile.transactions.length === 0;
+
+    return hasOnlyDefaultProfile && hasNoTransactions && currentSymbols === defaultSymbols && legacyHoldings.length > 0;
+  } catch {
+    return false;
   }
 }
 
