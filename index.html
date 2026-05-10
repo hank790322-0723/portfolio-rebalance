@@ -1,0 +1,197 @@
+<!doctype html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>&#32929;&#31080;&#20877;&#24179;&#34913;&#33287;&#25613;&#30410;</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">Portfolio Rebalance</p>
+          <h1>&#32929;&#31080;&#20877;&#24179;&#34913;&#33287;&#25613;&#30410;</h1>
+        </div>
+        <div class="top-actions" aria-label="data actions">
+          <button id="exportJson" class="icon-button" type="button" title="Export JSON">&darr;</button>
+          <button id="exportSpreadsheet" class="icon-button" type="button" title="Export spreadsheet">X</button>
+          <label class="icon-button file-action" title="Import JSON or CSV">
+            &uarr;
+            <input id="importJson" type="file" accept=".json,.csv,application/json,text/csv" />
+          </label>
+          <button id="resetData" class="icon-button danger" type="button" title="Reset">&times;</button>
+        </div>
+      </header>
+
+      <section class="metrics-grid" aria-label="portfolio overview">
+        <article class="metric">
+          <span>&#25237;&#36039;&#32068;&#21512;&#24066;&#20540;</span>
+          <strong id="totalMarketValue">$0</strong>
+        </article>
+        <article class="metric">
+          <span>&#32317;&#25104;&#26412;</span>
+          <strong id="totalCost">$0</strong>
+        </article>
+        <article class="metric">
+          <span>&#26410;&#23526;&#29694;&#25613;&#30410;</span>
+          <strong id="totalProfit">$0</strong>
+        </article>
+        <article class="metric">
+          <span>&#32317;&#22577;&#37228;&#29575;</span>
+          <strong id="totalReturn">0.00%</strong>
+        </article>
+      </section>
+
+      <section class="control-band" aria-label="rebalance settings">
+        <label>
+          &#29694;&#37329;
+          <input id="cashInput" type="number" min="0" step="1" inputmode="decimal" />
+        </label>
+        <label>
+          &#20877;&#24179;&#34913;&#38272;&#27323;
+          <div class="inline-input">
+            <input id="thresholdInput" type="number" min="0" max="100" step="0.1" inputmode="decimal" />
+            <span>%</span>
+          </div>
+        </label>
+        <label>
+          &#24163;&#21029;
+          <select id="currencySelect">
+            <option value="TWD">TWD</option>
+            <option value="USD">USD</option>
+            <option value="JPY">JPY</option>
+            <option value="EUR">EUR</option>
+          </select>
+        </label>
+        <label>
+          TWD &#21295;&#29575;
+          <input id="fxRateInput" type="number" min="0" step="0.0001" inputmode="decimal" />
+        </label>
+        <button id="addHolding" class="primary-button" type="button">+ &#26032;&#22686;&#32929;&#31080;</button>
+      </section>
+
+      <section class="price-band" aria-label="price updates">
+        <label>
+          &#33258;&#21205;&#26356;&#26032;&#29694;&#20729;
+          <select id="priceRefreshInterval">
+            <option value="0">&#19981;&#33258;&#21205;</option>
+            <option value="15">15 &#20998;&#37912;</option>
+            <option value="30">30 &#20998;&#37912;</option>
+            <option value="60">60 &#20998;&#37912;</option>
+          </select>
+        </label>
+        <label>
+          &#32929;&#20729;&#20195;&#29702; URL
+          <input id="priceProxyUrl" type="url" placeholder="https://your-worker.workers.dev" />
+        </label>
+        <button id="refreshPrices" class="secondary-button" type="button">&#31435;&#21363;&#26356;&#26032;&#29694;&#20729;</button>
+        <p id="priceUpdateStatus">&#29694;&#20729;&#21487;&#25163;&#21205;&#26356;&#26032;&#25110;&#35373;&#23450;&#33258;&#21205;&#38291;&#38548;&#12290;</p>
+      </section>
+
+      <section class="workspace" aria-label="holdings">
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>&#20195;&#34399;</th>
+                <th>&#21517;&#31281;</th>
+                <th>&#32929;&#25976;</th>
+                <th>&#22343;&#20729;</th>
+                <th>&#29694;&#20729;</th>
+                <th>&#30446;&#27161;%</th>
+                <th>&#24066;&#20540;</th>
+                <th>&#25613;&#30410;</th>
+                <th>&#22577;&#37228;</th>
+                <th>&#29694;&#27841;%</th>
+                <th>&#24046;&#36317;</th>
+                <th>&#24314;&#35696;</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="holdingsBody"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="trade-band" aria-label="trades">
+        <div class="trade-header">
+          <div>
+            <h2>&#36023;&#20837;&#35352;&#37636;</h2>
+            <p>&#36664;&#20837;&#36023;&#20837;&#26085;&#26399;&#12289;&#27161;&#30340;&#12289;&#32929;&#25976;&#21644;&#20729;&#26684;&#65292;&#26371;&#33258;&#21205;&#26356;&#26032;&#32929;&#25976;&#21644;&#22343;&#20729;&#12290;</p>
+          </div>
+        </div>
+        <form id="tradeForm" class="trade-form">
+          <label>
+            &#26085;&#26399;
+            <input id="tradeDate" type="date" required />
+          </label>
+          <label>
+            &#27161;&#30340;
+            <input id="tradeSymbol" list="symbolList" required placeholder="VWRA" />
+            <datalist id="symbolList"></datalist>
+          </label>
+          <label>
+            &#32929;&#25976;
+            <input id="tradeShares" type="number" min="0" step="1" required inputmode="decimal" />
+          </label>
+          <label>
+            &#36023;&#20837;&#20729;&#26684;
+            <input id="tradePrice" type="number" min="0" step="0.01" required inputmode="decimal" />
+          </label>
+          <label>
+            &#20729;&#26684;&#24163;&#21029;
+            <select id="tradeCurrency">
+              <option value="USD">USD</option>
+              <option value="TWD">TWD</option>
+              <option value="JPY">JPY</option>
+              <option value="EUR">EUR</option>
+            </select>
+          </label>
+          <button class="primary-button" type="submit">&#26032;&#22686;&#36023;&#20837;</button>
+        </form>
+        <div class="table-wrap trade-table-wrap">
+          <table class="trade-table">
+            <thead>
+              <tr>
+                <th>&#26085;&#26399;</th>
+                <th>&#27161;&#30340;</th>
+                <th>&#32929;&#25976;</th>
+                <th>&#20729;&#26684;</th>
+                <th>&#24163;&#21029;</th>
+                <th>&#37329;&#38989;</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="tradesBody"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="insight-band" aria-label="rebalance summary">
+        <div>
+          <h2>&#20877;&#24179;&#34913;&#25688;&#35201;</h2>
+          <p id="allocationStatus">&#30446;&#27161;&#37197;&#32622;&#21512;&#35336; 0%&#12290;</p>
+        </div>
+        <div id="rebalanceList" class="rebalance-list"></div>
+      </section>
+
+      <section class="chart-band" aria-label="performance history">
+        <div class="chart-header">
+          <div>
+            <h2>&#32318;&#25928;&#36208;&#21218;</h2>
+            <p id="chartStatus">&#35352;&#37636;&#27599;&#27425;&#26356;&#26032;&#24460;&#30340;&#21488;&#24163;&#28136;&#20540;&#12290;</p>
+          </div>
+          <div class="chart-actions">
+            <button id="recordSnapshot" class="secondary-button" type="button">&#35352;&#37636;&#20170;&#26085;</button>
+            <button id="clearHistory" class="secondary-button danger" type="button">&#28165;&#31354;&#27511;&#21490;</button>
+          </div>
+        </div>
+        <canvas id="performanceChart" width="1200" height="360"></canvas>
+      </section>
+    </main>
+
+    <script src="config.js"></script>
+    <script src="app.js"></script>
+  </body>
+</html>
