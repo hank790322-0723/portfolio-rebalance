@@ -176,7 +176,7 @@ h2 {
 
 .profile-band {
   display: grid;
-  grid-template-columns: minmax(180px, 1fr) minmax(220px, 1fr) auto auto auto;
+  grid-template-columns: minmax(180px, 1fr) minmax(220px, 1fr) auto auto auto auto;
   gap: 12px;
   align-items: end;
   padding: 16px;
@@ -434,6 +434,12 @@ tbody tr:last-child td {
 
 .trade-table-wrap {
   margin-top: 14px;
+}
+
+.trade-status {
+  margin-top: 10px;
+  color: var(--muted);
+  font-weight: 800;
 }
 
 .trade-table {

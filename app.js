@@ -3490,6 +3490,7 @@ const els = {
   addProfile: document.querySelector("#addProfile"),
   renameProfile: document.querySelector("#renameProfile"),
   deleteProfile: document.querySelector("#deleteProfile"),
+  restoreDefaultProfile: document.querySelector("#restoreDefaultProfile"),
   cashInput: document.querySelector("#cashInput"),
   thresholdInput: document.querySelector("#thresholdInput"),
   currencySelect: document.querySelector("#currencySelect"),
@@ -3518,6 +3519,7 @@ const els = {
   tradeShares: document.querySelector("#tradeShares"),
   tradePrice: document.querySelector("#tradePrice"),
   tradeCurrency: document.querySelector("#tradeCurrency"),
+  tradeStatus: document.querySelector("#tradeStatus"),
   symbolList: document.querySelector("#symbolList"),
   tradesBody: document.querySelector("#tradesBody"),
 };
@@ -3577,7 +3579,7 @@ function normalizeProfile(profile) {
     priceRefreshInterval: numberValue(profile.priceRefreshInterval),
     priceProxyUrl: profile.priceProxyUrl || globalThis.PRICE_PROXY_URL || "",
     chartRange: profile.chartRange || "all",
-    holdings: Array.isArray(profile.holdings) ? profile.holdings.map((holding) => normalizeHoldingCurrency(holding)) : structuredClone(defaultState.holdings),
+    holdings: Array.isArray(profile.holdings) && profile.holdings.length > 0 ? profile.holdings.map((holding) => normalizeHoldingCurrency(holding)) : structuredClone(defaultState.holdings),
     transactions: Array.isArray(profile.transactions) ? profile.transactions : [],
     performanceHistory: Array.isArray(profile.performanceHistory) ? profile.performanceHistory : structuredClone(initialPerformanceHistory),
   };
@@ -3781,9 +3783,9 @@ function render() {
   els.thresholdInput.value = state.threshold;
   els.currencySelect.value = state.currency;
   els.fxRateInput.value = state.fxRate;
-  els.priceRefreshInterval.value = state.priceRefreshInterval || 0;
-  els.priceProxyUrl.value = state.priceProxyUrl || globalThis.PRICE_PROXY_URL || "";
-  els.chartRange.value = state.chartRange || "all";
+  if (els.priceRefreshInterval) els.priceRefreshInterval.value = state.priceRefreshInterval || 0;
+  if (els.priceProxyUrl) els.priceProxyUrl.value = state.priceProxyUrl || globalThis.PRICE_PROXY_URL || "";
+  if (els.chartRange) els.chartRange.value = state.chartRange || "all";
   setMetric(els.totalMarketValue, format.format(portfolio.totalMarketValue), toTwd(portfolio.totalMarketValue));
   setMetric(els.totalCost, format.format(portfolio.totalCost), toTwd(portfolio.totalCost));
   setMetric(els.totalProfit, signedMoney(portfolio.totalProfit, format), toTwd(portfolio.totalProfit), true);
@@ -3859,6 +3861,7 @@ function renderProfileControls() {
   els.profileSelect.value = state.activeProfileId;
   els.profileNameInput.value = state.profileName || "";
   els.deleteProfile.disabled = state.profiles.length <= 1;
+  if (els.restoreDefaultProfile) els.restoreDefaultProfile.disabled = false;
 }
 
 function renderSummary(portfolio, format) {
@@ -3950,7 +3953,10 @@ function renderTradeTools() {
 }
 
 function addBuyTransaction(trade) {
-  if (!trade.date || !trade.symbol || trade.shares <= 0 || trade.price <= 0) return;
+  if (!trade.date || !trade.symbol || trade.shares <= 0 || trade.price <= 0) {
+    setTradeStatus("Please enter date, symbol, shares, and buy price.");
+    return;
+  }
 
   const quoteCurrency = isTwdQuotedSymbol(trade.symbol) ? "TWD" : trade.currency || state.currency;
   let holding = state.holdings.find((item) => String(item.symbol).toUpperCase() === trade.symbol);
@@ -3993,8 +3999,15 @@ function addBuyTransaction(trade) {
 
   els.tradeShares.value = "";
   els.tradePrice.value = "";
+  setTradeStatus(`Added ${trade.symbol}: ${trade.shares.toLocaleString("zh-TW")} shares at ${trade.price}.`);
   saveState();
   render();
+}
+
+function setTradeStatus(message) {
+  if (els.tradeStatus) {
+    els.tradeStatus.textContent = message;
+  }
 }
 
 function removeBuyTransaction(index) {
@@ -4062,6 +4075,18 @@ function deleteActiveProfile() {
   const nextProfile = profiles[0];
   state = stateFromProfile(nextProfile, profiles, nextProfile.id);
   performanceHistory = Array.isArray(nextProfile.performanceHistory) ? nextProfile.performanceHistory : [];
+  saveState();
+  render();
+}
+
+function restoreOriginalAssets() {
+  state.holdings = structuredClone(defaultState.holdings);
+  state.transactions = [];
+  state.cash = defaultState.cash;
+  state.threshold = defaultState.threshold;
+  state.currency = defaultState.currency;
+  state.fxRate = defaultState.fxRate;
+  performanceHistory = structuredClone(initialPerformanceHistory);
   saveState();
   render();
 }
@@ -4281,6 +4306,11 @@ els.deleteProfile.addEventListener("click", () => {
   if (state.profiles.length <= 1) return;
   if (!confirm("Delete this portfolio?")) return;
   deleteActiveProfile();
+});
+
+els.restoreDefaultProfile.addEventListener("click", () => {
+  if (!confirm("Restore the original assets you provided? This will replace the current portfolio holdings.")) return;
+  restoreOriginalAssets();
 });
 
 els.cashInput.addEventListener("input", (event) => {
