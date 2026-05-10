@@ -1,4 +1,4 @@
-const storageKey = "rebalance-site-state-v8";
+const storageKey = "rebalance-site-state-v9";
 const historyKey = "rebalance-performance-history-v3";
 
 const initialPerformanceHistory = [
@@ -3453,12 +3453,16 @@ const text = {
 };
 
 const defaultState = {
+  profileName: "\u6211\u7684\u6295\u8cc7\u7d44\u5408",
+  activeProfileId: "default",
+  profiles: [],
   cash: 0,
   threshold: 2,
   currency: "USD",
   fxRate: 31.3,
   priceRefreshInterval: 0,
   priceProxyUrl: globalThis.PRICE_PROXY_URL || "",
+  chartRange: "all",
   holdings: [
     { symbol: "VWRA", name: "VWRA", shares: 65, avgCost: 116.63, price: 186.12, target: 35, quoteCurrency: "USD" },
     { symbol: "006208", name: "006208", shares: 1178, avgCost: 76.083, price: 224.3, target: 22, quoteCurrency: "TWD" },
@@ -3474,12 +3478,18 @@ const defaultState = {
 let state = loadState();
 let performanceHistory = loadHistory();
 let priceRefreshTimer = null;
+let chartHoverState = null;
 
 const els = {
   totalMarketValue: document.querySelector("#totalMarketValue"),
   totalCost: document.querySelector("#totalCost"),
   totalProfit: document.querySelector("#totalProfit"),
   totalReturn: document.querySelector("#totalReturn"),
+  profileSelect: document.querySelector("#profileSelect"),
+  profileNameInput: document.querySelector("#profileNameInput"),
+  addProfile: document.querySelector("#addProfile"),
+  renameProfile: document.querySelector("#renameProfile"),
+  deleteProfile: document.querySelector("#deleteProfile"),
   cashInput: document.querySelector("#cashInput"),
   thresholdInput: document.querySelector("#thresholdInput"),
   currencySelect: document.querySelector("#currencySelect"),
@@ -3497,6 +3507,8 @@ const els = {
   importJson: document.querySelector("#importJson"),
   resetData: document.querySelector("#resetData"),
   performanceChart: document.querySelector("#performanceChart"),
+  chartRange: document.querySelector("#chartRange"),
+  chartTooltip: document.querySelector("#chartTooltip"),
   chartStatus: document.querySelector("#chartStatus"),
   recordSnapshot: document.querySelector("#recordSnapshot"),
   clearHistory: document.querySelector("#clearHistory"),
@@ -3512,30 +3524,109 @@ const els = {
 
 function loadState() {
   const saved = readStorage();
-  if (!saved) return structuredClone(defaultState);
+  if (!saved) return initializeProfiles(structuredClone(defaultState));
 
   try {
     const parsed = JSON.parse(saved);
-    if (!Array.isArray(parsed.holdings) || parsed.holdings.length === 0) {
-      return structuredClone(defaultState);
+    if (Array.isArray(parsed.profiles) && parsed.profiles.length > 0) {
+      const profiles = parsed.profiles.map(normalizeProfile);
+      const activeProfileId = parsed.activeProfileId || profiles[0].id;
+      const activeProfile = profiles.find((profile) => profile.id === activeProfileId) || profiles[0];
+      return stateFromProfile(activeProfile, profiles, activeProfile.id);
     }
 
-    return {
+    if (!Array.isArray(parsed.holdings) || parsed.holdings.length === 0) {
+      return initializeProfiles(structuredClone(defaultState));
+    }
+
+    const migrated = {
       ...structuredClone(defaultState),
       ...parsed,
       holdings: parsed.holdings.map((holding) => normalizeHoldingCurrency(holding)),
       transactions: Array.isArray(parsed.transactions) ? parsed.transactions : [],
     };
+    return initializeProfiles(migrated);
   } catch {
-    return structuredClone(defaultState);
+    return initializeProfiles(structuredClone(defaultState));
   }
 }
 
 function saveState() {
+  syncActiveProfile();
   writeStorage(JSON.stringify(state));
 }
 
+function initializeProfiles(source) {
+  const profile = normalizeProfile({
+    ...getProfileData(source),
+    id: source.activeProfileId || "default",
+    name: source.profileName || defaultState.profileName,
+    performanceHistory: source.performanceHistory || initialPerformanceHistory,
+  });
+  return stateFromProfile(profile, [profile], profile.id);
+}
+
+function normalizeProfile(profile) {
+  return {
+    id: profile.id || makeId(),
+    name: profile.name || defaultState.profileName,
+    cash: numberValue(profile.cash),
+    threshold: numberValue(profile.threshold || defaultState.threshold),
+    currency: profile.currency || defaultState.currency,
+    fxRate: numberValue(profile.fxRate || defaultState.fxRate),
+    priceRefreshInterval: numberValue(profile.priceRefreshInterval),
+    priceProxyUrl: profile.priceProxyUrl || globalThis.PRICE_PROXY_URL || "",
+    chartRange: profile.chartRange || "all",
+    holdings: Array.isArray(profile.holdings) ? profile.holdings.map((holding) => normalizeHoldingCurrency(holding)) : structuredClone(defaultState.holdings),
+    transactions: Array.isArray(profile.transactions) ? profile.transactions : [],
+    performanceHistory: Array.isArray(profile.performanceHistory) ? profile.performanceHistory : structuredClone(initialPerformanceHistory),
+  };
+}
+
+function stateFromProfile(profile, profiles, activeProfileId) {
+  return {
+    ...structuredClone(defaultState),
+    ...getProfileData(profile),
+    profileName: profile.name,
+    activeProfileId,
+    profiles,
+  };
+}
+
+function getProfileData(source) {
+  return {
+    cash: source.cash,
+    threshold: source.threshold,
+    currency: source.currency,
+    fxRate: source.fxRate,
+    priceRefreshInterval: source.priceRefreshInterval,
+    priceProxyUrl: source.priceProxyUrl,
+    chartRange: source.chartRange || "all",
+    holdings: Array.isArray(source.holdings) ? source.holdings : [],
+    transactions: Array.isArray(source.transactions) ? source.transactions : [],
+    performanceHistory: Array.isArray(source.performanceHistory) ? source.performanceHistory : undefined,
+  };
+}
+
+function syncActiveProfile() {
+  if (!Array.isArray(state.profiles) || state.profiles.length === 0) return;
+
+  const index = state.profiles.findIndex((profile) => profile.id === state.activeProfileId);
+  if (index < 0) return;
+
+  state.profiles[index] = normalizeProfile({
+    ...getProfileData(state),
+    id: state.activeProfileId,
+    name: state.profileName,
+    performanceHistory,
+  });
+}
+
 function loadHistory() {
+  if (Array.isArray(state.performanceHistory)) {
+    return state.performanceHistory.filter((item) => item && item.date && Number.isFinite(Number(item.value)));
+  }
+
   try {
     const saved = localStorage.getItem(historyKey);
     const parsed = saved ? JSON.parse(saved) : initialPerformanceHistory;
@@ -3547,6 +3638,7 @@ function loadHistory() {
 }
 
 function saveHistory() {
+  syncActiveProfile();
   try {
     localStorage.setItem(historyKey, JSON.stringify(performanceHistory));
   } catch {
@@ -3556,7 +3648,15 @@ function saveHistory() {
 
 function readStorage() {
   try {
-    return localStorage.getItem(storageKey);
+    const current = localStorage.getItem(storageKey);
+    if (current) return current;
+
+    for (const key of ["rebalance-site-state-v8", "rebalance-site-state-v7", "rebalance-site-state-v6", "rebalance-site-state-v5"]) {
+      const legacy = localStorage.getItem(key);
+      if (legacy) return legacy;
+    }
+
+    return null;
   } catch {
     return null;
   }
@@ -3597,7 +3697,8 @@ function isTwdQuotedSymbol(symbol) {
 
 function normalizeHoldingCurrency(holding) {
   const shouldUseTwd = isTwdQuotedSymbol(holding.symbol);
-  const quoteCurrency = holding.quoteCurrency || (shouldUseTwd ? "TWD" : state?.currency || defaultState.currency);
+  const fallbackCurrency = typeof state !== "undefined" && state?.currency ? state.currency : defaultState.currency;
+  const quoteCurrency = holding.quoteCurrency || (shouldUseTwd ? "TWD" : fallbackCurrency);
   return { ...holding, quoteCurrency: shouldUseTwd ? "TWD" : quoteCurrency };
 }
 
@@ -3649,15 +3750,17 @@ function render() {
   const portfolio = getPortfolio();
   const format = currencyFormatter();
 
+  renderProfileControls();
   els.cashInput.value = state.cash;
   els.thresholdInput.value = state.threshold;
   els.currencySelect.value = state.currency;
   els.fxRateInput.value = state.fxRate;
   els.priceRefreshInterval.value = state.priceRefreshInterval || 0;
   els.priceProxyUrl.value = state.priceProxyUrl || globalThis.PRICE_PROXY_URL || "";
+  els.chartRange.value = state.chartRange || "all";
   setMetric(els.totalMarketValue, format.format(portfolio.totalMarketValue), toTwd(portfolio.totalMarketValue));
   setMetric(els.totalCost, format.format(portfolio.totalCost), toTwd(portfolio.totalCost));
-  els.totalProfit.textContent = signedMoney(portfolio.totalProfit, format);
+  setMetric(els.totalProfit, signedMoney(portfolio.totalProfit, format), toTwd(portfolio.totalProfit), true);
   els.totalProfit.className = portfolio.totalProfit >= 0 ? "profit" : "loss";
   els.totalReturn.textContent = pct(portfolio.totalReturn);
   els.totalReturn.className = portfolio.totalReturn >= 0 ? "profit" : "loss";
@@ -3671,8 +3774,9 @@ function render() {
   saveState();
 }
 
-function setMetric(element, primary, twdValue) {
-  element.innerHTML = `${primary}<small>${twdFormatter().format(twdValue)}</small>`;
+function setMetric(element, primary, twdValue, signed = false) {
+  const twdText = signed ? signedMoney(twdValue, twdFormatter()) : twdFormatter().format(twdValue);
+  element.innerHTML = `${primary}<small>${twdText}</small>`;
 }
 
 function toTwd(value) {
@@ -3718,6 +3822,17 @@ function renderRows(portfolio, format) {
     `;
     els.holdingsBody.append(row);
   });
+}
+
+function renderProfileControls() {
+  if (!els.profileSelect) return;
+
+  els.profileSelect.innerHTML = state.profiles
+    .map((profile) => `<option value="${escapeHtml(profile.id)}">${escapeHtml(profile.name)}</option>`)
+    .join("");
+  els.profileSelect.value = state.activeProfileId;
+  els.profileNameInput.value = state.profileName || "";
+  els.deleteProfile.disabled = state.profiles.length <= 1;
 }
 
 function renderSummary(portfolio, format) {
@@ -3882,6 +3997,47 @@ function convertPriceToQuoteCurrency(price, fromCurrency, toCurrency) {
   if (fromCurrency === "TWD" && toCurrency !== "TWD") return numberValue(price) / Math.max(numberValue(state.fxRate), 0.0001);
   if (fromCurrency !== "TWD" && toCurrency === "TWD") return numberValue(price) * numberValue(state.fxRate);
   return numberValue(price);
+}
+
+function switchProfile(profileId) {
+  syncActiveProfile();
+  const profile = state.profiles.find((item) => item.id === profileId);
+  if (!profile) return;
+
+  state = stateFromProfile(profile, state.profiles, profile.id);
+  performanceHistory = Array.isArray(profile.performanceHistory) ? profile.performanceHistory : structuredClone(initialPerformanceHistory);
+  saveState();
+  render();
+}
+
+function addProfile(name) {
+  syncActiveProfile();
+  const profile = normalizeProfile({
+    ...getProfileData(structuredClone(defaultState)),
+    id: makeId(),
+    name,
+    performanceHistory: [],
+  });
+
+  const profiles = [...state.profiles, profile];
+  state = stateFromProfile(profile, profiles, profile.id);
+  performanceHistory = [];
+  saveState();
+  render();
+}
+
+function makeId() {
+  if (globalThis.crypto?.randomUUID) return crypto.randomUUID();
+  return `profile-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+function deleteActiveProfile() {
+  const profiles = state.profiles.filter((profile) => profile.id !== state.activeProfileId);
+  const nextProfile = profiles[0];
+  state = stateFromProfile(nextProfile, profiles, nextProfile.id);
+  performanceHistory = Array.isArray(nextProfile.performanceHistory) ? nextProfile.performanceHistory : [];
+  saveState();
+  render();
 }
 
 function setupPriceRefreshTimer() {
@@ -4078,6 +4234,29 @@ function updateHolding(index, field, value) {
   saveState();
 }
 
+els.profileSelect.addEventListener("change", (event) => {
+  switchProfile(event.target.value);
+});
+
+els.addProfile.addEventListener("click", () => {
+  const name = els.profileNameInput.value.trim() || `Portfolio ${state.profiles.length + 1}`;
+  addProfile(name);
+});
+
+els.renameProfile.addEventListener("click", () => {
+  const name = els.profileNameInput.value.trim();
+  if (!name) return;
+  state.profileName = name;
+  saveState();
+  render();
+});
+
+els.deleteProfile.addEventListener("click", () => {
+  if (state.profiles.length <= 1) return;
+  if (!confirm("Delete this portfolio?")) return;
+  deleteActiveProfile();
+});
+
 els.cashInput.addEventListener("input", (event) => {
   state.cash = numberValue(event.target.value);
   render();
@@ -4102,6 +4281,11 @@ els.priceRefreshInterval.addEventListener("change", (event) => {
   state.priceRefreshInterval = numberValue(event.target.value);
   setupPriceRefreshTimer();
   saveState();
+});
+
+els.chartRange.addEventListener("change", (event) => {
+  state.chartRange = event.target.value;
+  render();
 });
 
 els.priceProxyUrl.addEventListener("change", (event) => {
@@ -4170,7 +4354,16 @@ els.tradesBody.addEventListener("click", (event) => {
   render();
 });
 
+els.performanceChart.addEventListener("mousemove", (event) => {
+  showChartTooltip(event);
+});
+
+els.performanceChart.addEventListener("mouseleave", () => {
+  if (els.chartTooltip) els.chartTooltip.hidden = true;
+});
+
 els.exportJson.addEventListener("click", () => {
+  syncActiveProfile();
   const blob = new Blob([JSON.stringify(state, null, 2)], { type: "application/json" });
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
@@ -4191,15 +4384,13 @@ els.importJson.addEventListener("change", async (event) => {
   try {
     const fileText = await file.text();
     if (file.name.toLowerCase().endsWith(".csv")) {
-      state = importPortfolioCsv(fileText);
+      state = initializeProfiles(importPortfolioCsv(fileText));
+      performanceHistory = loadHistory();
     } else {
       const imported = JSON.parse(fileText);
-      state = {
-        ...structuredClone(defaultState),
-        ...imported,
-        holdings: Array.isArray(imported.holdings) ? imported.holdings.map((holding) => normalizeHoldingCurrency(holding)) : [],
-        transactions: Array.isArray(imported.transactions) ? imported.transactions : [],
-      };
+      writeStorage(JSON.stringify(imported));
+      state = loadState();
+      performanceHistory = loadHistory();
     }
     render();
   } catch (error) {
@@ -4211,7 +4402,8 @@ els.importJson.addEventListener("change", async (event) => {
 
 els.resetData.addEventListener("click", () => {
   if (!confirm(text.resetConfirm)) return;
-  state = structuredClone(defaultState);
+  state = initializeProfiles(structuredClone(defaultState));
+  performanceHistory = loadHistory();
   render();
 });
 
@@ -4269,22 +4461,42 @@ function renderPerformanceChart(format) {
     canvas.height = displayHeight;
   }
 
-  drawChart(ctx, canvas.width, canvas.height, format);
+  const chartHistory = getFilteredPerformanceHistory();
+  drawChart(ctx, canvas.width, canvas.height, format, chartHistory);
 
-  if (performanceHistory.length <= 1) {
+  if (chartHistory.length <= 1) {
     els.chartStatus.textContent = text.historyOnePoint;
   } else {
-    const first = performanceHistory[0].value;
-    const last = performanceHistory[performanceHistory.length - 1].value;
+    const first = chartHistory[0].value;
+    const last = chartHistory[chartHistory.length - 1].value;
     const returnRate = first > 0 ? ((last - first) / first) * 100 : 0;
-    els.chartStatus.textContent = `${text.historyManyPoints} ${performanceHistory.length} ${text.points}, ${format.format(first)} -> ${format.format(last)}, ${pct(returnRate)}.`;
+    els.chartStatus.textContent = `${text.historyManyPoints} ${chartHistory.length} ${text.points}, ${format.format(first)} -> ${format.format(last)}, ${pct(returnRate)}.`;
   }
 }
 
-function drawChart(ctx, width, height, format) {
+function getFilteredPerformanceHistory() {
+  const history = performanceHistory.filter((item) => item && item.date && Number.isFinite(Number(item.value)));
+  const range = state.chartRange || "all";
+  if (range === "all" || history.length === 0) return history;
+
+  const now = new Date();
+  if (range === "ytd") {
+    const year = String(now.getFullYear());
+    return history.filter((item) => String(item.date).slice(0, 4) === year);
+  }
+
+  const months = numberValue(range);
+  const cutoff = new Date(now);
+  cutoff.setMonth(cutoff.getMonth() - months);
+  const cutoffText = cutoff.toISOString().slice(0, 10);
+  return history.filter((item) => String(item.date).slice(0, 10) >= cutoffText);
+}
+
+function drawChart(ctx, width, height, format, history) {
   ctx.clearRect(0, 0, width, height);
   ctx.fillStyle = "#ffffff";
   ctx.fillRect(0, 0, width, height);
+  chartHoverState = null;
 
   const pad = {
     top: 26,
@@ -4295,7 +4507,7 @@ function drawChart(ctx, width, height, format) {
 
   const plotWidth = width - pad.left - pad.right;
   const plotHeight = height - pad.top - pad.bottom;
-  const values = performanceHistory.map((item) => Number(item.value));
+  const values = history.map((item) => Number(item.value));
   const minValue = Math.min(...values, 0);
   const maxValue = Math.max(...values, 1);
   const range = Math.max(maxValue - minValue, 1);
@@ -4315,13 +4527,16 @@ function drawChart(ctx, width, height, format) {
     ctx.fillText(compactMoney(value, format), 12, y + 4);
   }
 
-  if (performanceHistory.length === 0) return;
+  if (history.length === 0) return;
 
-  const points = performanceHistory.map((item, index) => {
-    const x = performanceHistory.length === 1 ? pad.left + plotWidth / 2 : pad.left + (plotWidth * index) / (performanceHistory.length - 1);
+  const firstValue = Number(history[0].value);
+  const points = history.map((item, index) => {
+    const x = history.length === 1 ? pad.left + plotWidth / 2 : pad.left + (plotWidth * index) / (history.length - 1);
     const y = pad.top + plotHeight - ((Number(item.value) - minValue) / range) * plotHeight;
-    return { x, y, item };
+    const performance = firstValue > 0 ? ((Number(item.value) - firstValue) / firstValue) * 100 : 0;
+    return { x, y, item, performance };
   });
+  chartHoverState = { points, format, dpr: window.devicePixelRatio || 1 };
 
   const gradient = ctx.createLinearGradient(0, pad.top, 0, height - pad.bottom);
   gradient.addColorStop(0, "rgba(15, 118, 110, 0.22)");
@@ -4367,6 +4582,33 @@ function compactMoney(value, format) {
   if (Math.abs(value) >= 1000000) return `${format.format(value / 1000000)}M`;
   if (Math.abs(value) >= 1000) return `${format.format(value / 1000)}K`;
   return format.format(value);
+}
+
+function showChartTooltip(event) {
+  if (!chartHoverState || !els.chartTooltip) return;
+
+  const rect = els.performanceChart.getBoundingClientRect();
+  const x = (event.clientX - rect.left) * chartHoverState.dpr;
+  const nearest = chartHoverState.points.reduce((best, point) => {
+    const distance = Math.abs(point.x - x);
+    return !best || distance < best.distance ? { point, distance } : best;
+  }, null)?.point;
+
+  if (!nearest) {
+    els.chartTooltip.hidden = true;
+    return;
+  }
+
+  const displayX = nearest.x / chartHoverState.dpr;
+  const displayY = nearest.y / chartHoverState.dpr;
+  els.chartTooltip.innerHTML = `
+    <strong>${escapeHtml(nearest.item.date)}</strong><br>
+    \u5e02\u503c ${escapeHtml(chartHoverState.format.format(Number(nearest.item.value)))}<br>
+    \u7e3e\u6548 ${escapeHtml(pct(nearest.performance))}
+  `;
+  els.chartTooltip.hidden = false;
+  els.chartTooltip.style.left = `${els.performanceChart.offsetLeft + Math.min(displayX + 18, rect.width - 200)}px`;
+  els.chartTooltip.style.top = `${els.performanceChart.offsetTop + Math.max(10, displayY - 58)}px`;
 }
 
 function importPortfolioCsv(csvText) {

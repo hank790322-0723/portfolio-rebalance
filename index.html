@@ -24,6 +24,20 @@
         </div>
       </header>
 
+      <section class="profile-band" aria-label="portfolio profiles">
+        <label>
+          &#25237;&#36039;&#32068;&#21512;
+          <select id="profileSelect"></select>
+        </label>
+        <label>
+          &#26032;&#32068;&#21512;&#21517;&#31281;
+          <input id="profileNameInput" type="text" placeholder="My portfolio" />
+        </label>
+        <button id="addProfile" class="secondary-button" type="button">&#26032;&#22686;</button>
+        <button id="renameProfile" class="secondary-button" type="button">&#25913;&#21517;</button>
+        <button id="deleteProfile" class="secondary-button danger" type="button">&#21034;&#38500;</button>
+      </section>
+
       <section class="metrics-grid" aria-label="portfolio overview">
         <article class="metric">
           <span>&#25237;&#36039;&#32068;&#21512;&#24066;&#20540;</span>
@@ -183,11 +197,20 @@
             <p id="chartStatus">&#35352;&#37636;&#27599;&#27425;&#26356;&#26032;&#24460;&#30340;&#21488;&#24163;&#28136;&#20540;&#12290;</p>
           </div>
           <div class="chart-actions">
+            <select id="chartRange" aria-label="performance range">
+              <option value="all">&#20840;&#37096;</option>
+              <option value="1">1M</option>
+              <option value="3">3M</option>
+              <option value="6">6M</option>
+              <option value="12">12M</option>
+              <option value="ytd">&#20170;&#24180;</option>
+            </select>
             <button id="recordSnapshot" class="secondary-button" type="button">&#35352;&#37636;&#20170;&#26085;</button>
             <button id="clearHistory" class="secondary-button danger" type="button">&#28165;&#31354;&#27511;&#21490;</button>
           </div>
         </div>
         <canvas id="performanceChart" width="1200" height="360"></canvas>
+        <div id="chartTooltip" class="chart-tooltip" hidden></div>
       </section>
     </main>
 

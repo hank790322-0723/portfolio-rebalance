@@ -153,6 +153,7 @@ h2 {
 }
 
 .control-band,
+.profile-band,
 .price-band,
 .insight-band,
 .workspace,
@@ -170,6 +171,14 @@ h2 {
   grid-template-columns: minmax(180px, 1fr) minmax(160px, 0.7fr) minmax(140px, 0.55fr) minmax(140px, 0.55fr) auto;
   align-items: end;
   gap: 14px;
+  padding: 16px;
+}
+
+.profile-band {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) minmax(220px, 1fr) auto auto auto;
+  gap: 12px;
+  align-items: end;
   padding: 16px;
 }
 
@@ -402,6 +411,7 @@ tbody tr:last-child td {
 
 .chart-band {
   padding: 18px;
+  position: relative;
 }
 
 .trade-band {
@@ -457,6 +467,21 @@ tbody tr:last-child td {
   margin-top: 14px;
 }
 
+.chart-tooltip {
+  position: absolute;
+  z-index: 3;
+  min-width: 180px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: var(--shadow);
+  color: var(--ink);
+  padding: 9px 10px;
+  font-size: 0.86rem;
+  line-height: 1.5;
+  pointer-events: none;
+}
+
 @media (max-width: 900px) {
   .app-shell {
     width: min(100vw - 22px, 760px);
@@ -483,6 +508,7 @@ tbody tr:last-child td {
   }
 
   .metrics-grid,
+  .profile-band,
   .control-band,
   .price-band,
   .trade-form {
@@ -490,6 +516,7 @@ tbody tr:last-child td {
   }
 
   .primary-button,
+  .profile-band .secondary-button,
   .price-band p,
   .trade-form .primary-button {
     grid-column: 1 / -1;
@@ -498,6 +525,7 @@ tbody tr:last-child td {
 
 @media (max-width: 560px) {
   .metrics-grid,
+  .profile-band,
   .control-band,
   .price-band,
   .trade-form {
