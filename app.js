@@ -3953,18 +3953,21 @@ function renderTradeTools() {
 }
 
 function addBuyTransaction(trade) {
-  if (!trade.date || !trade.symbol || trade.shares <= 0 || trade.price <= 0) {
-    setTradeStatus("Please enter date, symbol, shares, and buy price.");
+  const date = trade.date || todayString();
+  const symbol = String(trade.symbol || "").trim().toUpperCase();
+
+  if (!symbol || trade.shares <= 0 || trade.price <= 0) {
+    setTradeStatus("請輸入股票代號、股數和買入價格。");
     return;
   }
 
-  const quoteCurrency = isTwdQuotedSymbol(trade.symbol) ? "TWD" : trade.currency || state.currency;
-  let holding = state.holdings.find((item) => String(item.symbol).toUpperCase() === trade.symbol);
+  const quoteCurrency = isTwdQuotedSymbol(symbol) ? "TWD" : trade.currency || state.currency;
+  let holding = state.holdings.find((item) => String(item.symbol).toUpperCase() === symbol);
 
   if (!holding) {
     holding = {
-      symbol: trade.symbol,
-      name: trade.symbol,
+      symbol,
+      name: symbol,
       shares: 0,
       avgCost: 0,
       price: 0,
@@ -3990,8 +3993,8 @@ function addBuyTransaction(trade) {
 
   state.transactions = Array.isArray(state.transactions) ? state.transactions : [];
   state.transactions.push({
-    date: trade.date,
-    symbol: trade.symbol,
+    date,
+    symbol,
     shares: trade.shares,
     price: trade.price,
     currency: trade.currency,
@@ -3999,7 +4002,9 @@ function addBuyTransaction(trade) {
 
   els.tradeShares.value = "";
   els.tradePrice.value = "";
-  setTradeStatus(`Added ${trade.symbol}: ${trade.shares.toLocaleString("zh-TW")} shares at ${trade.price}.`);
+  els.tradeDate.value = date;
+  els.tradeSymbol.value = symbol;
+  setTradeStatus(`已新增 ${symbol}：${trade.shares.toLocaleString("zh-TW")} 股，買入價 ${trade.price.toLocaleString("zh-TW", { maximumFractionDigits: 4 })}。`);
   saveState();
   render();
 }
@@ -4080,15 +4085,28 @@ function deleteActiveProfile() {
 }
 
 function restoreOriginalAssets() {
-  state.holdings = structuredClone(defaultState.holdings);
-  state.transactions = [];
-  state.cash = defaultState.cash;
-  state.threshold = defaultState.threshold;
-  state.currency = defaultState.currency;
-  state.fxRate = defaultState.fxRate;
+  const restoredProfile = normalizeProfile({
+    ...getProfileData(structuredClone(defaultState)),
+    id: state.activeProfileId || "default",
+    name: state.profileName || defaultState.profileName,
+    performanceHistory: structuredClone(initialPerformanceHistory),
+  });
+  const profiles = Array.isArray(state.profiles) && state.profiles.length > 0
+    ? state.profiles.map((profile) => (profile.id === restoredProfile.id ? restoredProfile : profile))
+    : [restoredProfile];
+  if (!profiles.some((profile) => profile.id === restoredProfile.id)) {
+    profiles.unshift(restoredProfile);
+  }
+  state = stateFromProfile(restoredProfile, profiles, restoredProfile.id);
   performanceHistory = structuredClone(initialPerformanceHistory);
+  setTradeStatus("已還原成你原本提供的資產。");
+  setPriceStatus("已還原成原始資產，資料會儲存在目前這個瀏覽器。");
   saveState();
   render();
+}
+
+function todayString() {
+  return new Date().toISOString().slice(0, 10);
 }
 
 function setupPriceRefreshTimer() {
@@ -4309,7 +4327,6 @@ els.deleteProfile.addEventListener("click", () => {
 });
 
 els.restoreDefaultProfile.addEventListener("click", () => {
-  if (!confirm("Restore the original assets you provided? This will replace the current portfolio holdings.")) return;
   restoreOriginalAssets();
 });
 
@@ -4395,7 +4412,7 @@ els.tradeSymbol.addEventListener("input", () => {
 els.tradeForm.addEventListener("submit", (event) => {
   event.preventDefault();
   addBuyTransaction({
-    date: els.tradeDate.value,
+    date: els.tradeDate.value || todayString(),
     symbol: els.tradeSymbol.value.trim().toUpperCase(),
     shares: numberValue(els.tradeShares.value),
     price: numberValue(els.tradePrice.value),
