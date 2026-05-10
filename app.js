@@ -3544,7 +3544,7 @@ function loadState() {
     const migrated = {
       ...structuredClone(defaultState),
       ...parsed,
-      holdings: parsed.holdings.map((holding) => normalizeHoldingCurrency(holding)),
+      holdings: parsed.holdings.map((holding) => normalizeHoldingCurrency(holding, parsed.currency || defaultState.currency)),
       transactions: Array.isArray(parsed.transactions) ? parsed.transactions : [],
     };
     return initializeProfiles(migrated);
@@ -3579,7 +3579,7 @@ function normalizeProfile(profile) {
     priceRefreshInterval: numberValue(profile.priceRefreshInterval),
     priceProxyUrl: profile.priceProxyUrl || globalThis.PRICE_PROXY_URL || "",
     chartRange: profile.chartRange || "all",
-    holdings: Array.isArray(profile.holdings) && profile.holdings.length > 0 ? profile.holdings.map((holding) => normalizeHoldingCurrency(holding)) : structuredClone(defaultState.holdings),
+    holdings: Array.isArray(profile.holdings) && profile.holdings.length > 0 ? profile.holdings.map((holding) => normalizeHoldingCurrency(holding, profile.currency)) : structuredClone(defaultState.holdings),
     transactions: Array.isArray(profile.transactions) ? profile.transactions : [],
     performanceHistory: Array.isArray(profile.performanceHistory) ? profile.performanceHistory : structuredClone(initialPerformanceHistory),
   };
@@ -3723,9 +3723,8 @@ function isTwdQuotedSymbol(symbol) {
   return ["0050", "006208", "0051"].includes(String(symbol ?? "").trim());
 }
 
-function normalizeHoldingCurrency(holding) {
+function normalizeHoldingCurrency(holding, fallbackCurrency = defaultState.currency) {
   const shouldUseTwd = isTwdQuotedSymbol(holding.symbol);
-  const fallbackCurrency = typeof state !== "undefined" && state?.currency ? state.currency : defaultState.currency;
   const quoteCurrency = holding.quoteCurrency || (shouldUseTwd ? "TWD" : fallbackCurrency);
   return { ...holding, quoteCurrency: shouldUseTwd ? "TWD" : quoteCurrency };
 }
@@ -3748,7 +3747,7 @@ function signedMoney(value, format) {
 
 function getPortfolio() {
   const holdings = state.holdings.map((rawHolding) => {
-    const holding = normalizeHoldingCurrency(rawHolding);
+    const holding = normalizeHoldingCurrency(rawHolding, state.currency);
     const shares = numberValue(holding.shares);
     const avgCost = numberValue(holding.avgCost);
     const price = numberValue(holding.price);

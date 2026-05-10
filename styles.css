@@ -65,6 +65,13 @@ button {
   text-transform: uppercase;
 }
 
+.version-note {
+  margin-top: 8px;
+  color: var(--muted);
+  font-size: 0.84rem;
+  font-weight: 700;
+}
+
 h1,
 h2,
 p {
