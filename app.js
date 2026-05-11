@@ -4283,11 +4283,17 @@ async function fetchStooqPrice(symbol) {
 }
 
 async function fetchYahooPrice(symbol) {
-  const url = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(symbol)}`;
+  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?range=1d&interval=1m`;
   const text = await fetchTextWithFallback(url);
   const data = JSON.parse(text);
-  const price = Number(data.quoteResponse?.result?.[0]?.regularMarketPrice);
-  return Number.isFinite(price) ? price : null;
+  const result = data.chart?.result?.[0];
+  const regularPrice = Number(result?.meta?.regularMarketPrice);
+  if (Number.isFinite(regularPrice) && regularPrice > 0) return regularPrice;
+
+  const closes = result?.indicators?.quote?.[0]?.close || [];
+  const lastClose = [...closes].reverse().find((value) => Number.isFinite(Number(value)));
+  const price = Number(lastClose);
+  return Number.isFinite(price) && price > 0 ? price : null;
 }
 
 async function fetchTwsePrice(symbol) {
