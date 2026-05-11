@@ -3464,13 +3464,13 @@ const defaultState = {
   priceProxyUrl: globalThis.PRICE_PROXY_URL || "",
   chartRange: "all",
   holdings: [
-    { symbol: "VWRA", name: "VWRA", shares: 65, avgCost: 116.63, price: 186.12, target: 35, quoteCurrency: "USD" },
-    { symbol: "006208", name: "006208", shares: 1178, avgCost: 76.083, price: 224.3, target: 22, quoteCurrency: "TWD" },
-    { symbol: "0051", name: "0051", shares: 425, avgCost: 71.185, price: 131.65, target: 5, quoteCurrency: "TWD" },
-    { symbol: "IMID", name: "IMID", shares: 795, avgCost: 10.107, price: 12.83, target: 30, quoteCurrency: "USD" },
-    { symbol: "0050", name: "0050", shares: 365, avgCost: 63.443, price: 97, target: 3, quoteCurrency: "TWD" },
-    { symbol: "AVGS", name: "AVGS", shares: 36, avgCost: 23.854, price: 27.89, target: 3, quoteCurrency: "USD" },
-    { symbol: "JPGL", name: "JPGL", shares: 13, avgCost: 45.448, price: 50, target: 2, quoteCurrency: "USD" },
+    { symbol: "VWRA", name: "VWRA", market: "UK", shares: 65, avgCost: 116.63, price: 186.12, target: 35, quoteCurrency: "USD" },
+    { symbol: "006208", name: "006208", market: "TW", shares: 1178, avgCost: 76.083, price: 224.3, target: 22, quoteCurrency: "TWD" },
+    { symbol: "0051", name: "0051", market: "TW", shares: 425, avgCost: 71.185, price: 131.65, target: 5, quoteCurrency: "TWD" },
+    { symbol: "IMID", name: "IMID", market: "UK", shares: 795, avgCost: 10.107, price: 12.83, target: 30, quoteCurrency: "USD" },
+    { symbol: "0050", name: "0050", market: "TW", shares: 365, avgCost: 63.443, price: 97, target: 3, quoteCurrency: "TWD" },
+    { symbol: "AVGS", name: "AVGS", market: "UK", shares: 36, avgCost: 23.854, price: 27.89, target: 3, quoteCurrency: "USD" },
+    { symbol: "JPGL", name: "JPGL", market: "UK", shares: 13, avgCost: 45.448, price: 50, target: 2, quoteCurrency: "USD" },
   ],
   transactions: [],
 };
@@ -3720,13 +3720,42 @@ function numberValue(value) {
 }
 
 function isTwdQuotedSymbol(symbol) {
-  return ["0050", "006208", "0051"].includes(String(symbol ?? "").trim());
+  return inferMarket(symbol) === "TW";
 }
 
 function normalizeHoldingCurrency(holding, fallbackCurrency = defaultState.currency) {
-  const shouldUseTwd = isTwdQuotedSymbol(holding.symbol);
-  const quoteCurrency = holding.quoteCurrency || (shouldUseTwd ? "TWD" : fallbackCurrency);
-  return { ...holding, quoteCurrency: shouldUseTwd ? "TWD" : quoteCurrency };
+  const market = normalizeMarket(holding.market || inferMarket(holding.symbol));
+  const quoteCurrency = quoteCurrencyForMarket(market, holding.quoteCurrency || fallbackCurrency);
+  return { ...holding, market, quoteCurrency };
+}
+
+function normalizeMarket(market) {
+  const value = String(market || "AUTO").trim().toUpperCase();
+  return ["AUTO", "TW", "US", "UK"].includes(value) ? value : "AUTO";
+}
+
+function inferMarket(symbol) {
+  const value = String(symbol ?? "").trim().toUpperCase();
+  if (!value) return "AUTO";
+  if (/^\d{4,6}$/.test(value) || /\.(TW|TWO)$/.test(value)) return "TW";
+  if (/\.(L|UK)$/.test(value)) return "UK";
+  if (["VWRA", "VWRP", "VWRL", "VUSA", "VUAG", "IMID", "AVGS", "JPGL", "CSPX", "IWDA", "SWDA", "EIMI", "ISAC", "IUIT"].includes(value)) return "UK";
+  return "US";
+}
+
+function quoteCurrencyForMarket(market, fallbackCurrency = defaultState.currency) {
+  if (market === "TW") return "TWD";
+  if (market === "US" || market === "UK") return "USD";
+  return fallbackCurrency || defaultState.currency;
+}
+
+function marketLabel(market) {
+  return {
+    AUTO: "\u81ea\u52d5",
+    TW: "\u53f0\u80a1",
+    US: "\u7f8e\u80a1",
+    UK: "\u82f1\u80a1",
+  }[normalizeMarket(market)];
 }
 
 function convertToPortfolioCurrency(value, quoteCurrency) {
@@ -3816,7 +3845,7 @@ function renderRows(portfolio, format) {
 
   if (portfolio.holdings.length === 0) {
     const row = document.createElement("tr");
-    row.innerHTML = `<td class="empty-state" colspan="13">${text.noHoldings}</td>`;
+    row.innerHTML = `<td class="empty-state" colspan="14">${text.noHoldings}</td>`;
     els.holdingsBody.append(row);
     return;
   }
@@ -3835,6 +3864,14 @@ function renderRows(portfolio, format) {
     row.innerHTML = `
       <td><input name="symbol-${index}" aria-label="Symbol" data-field="symbol" data-index="${index}" placeholder="VWRA" value="${escapeHtml(holding.symbol ?? "")}" /></td>
       <td><input name="name-${index}" aria-label="Name" data-field="name" data-index="${index}" placeholder="ETF name" value="${escapeHtml(holding.name ?? "")}" /></td>
+      <td>
+        <select name="market-${index}" aria-label="Market" data-field="market" data-index="${index}">
+          <option value="AUTO" ${holding.market === "AUTO" ? "selected" : ""}>${marketLabel("AUTO")}</option>
+          <option value="TW" ${holding.market === "TW" ? "selected" : ""}>${marketLabel("TW")}</option>
+          <option value="US" ${holding.market === "US" ? "selected" : ""}>${marketLabel("US")}</option>
+          <option value="UK" ${holding.market === "UK" ? "selected" : ""}>${marketLabel("UK")}</option>
+        </select>
+      </td>
       <td><input name="shares-${index}" aria-label="Shares" data-field="shares" data-index="${index}" type="number" min="0" step="1" placeholder="0" value="${holding.shares}" /></td>
       <td><input name="avg-cost-${index}" aria-label="Average cost ${quoteLabel}" data-field="avgCost" data-index="${index}" type="number" min="0" step="0.01" placeholder="${quoteLabel}" value="${holding.avgCost}" /></td>
       <td><input name="price-${index}" aria-label="Current price ${quoteLabel}" data-field="price" data-index="${index}" type="number" min="0" step="0.01" placeholder="${quoteLabel}" value="${holding.price}" /></td>
@@ -3964,19 +4001,22 @@ function addBuyTransaction(trade) {
   let holding = state.holdings.find((item) => String(item.symbol).toUpperCase() === symbol);
 
   if (!holding) {
+    const market = inferMarket(symbol);
     holding = {
       symbol,
       name: symbol,
+      market,
       shares: 0,
       avgCost: 0,
       price: 0,
       target: 0,
-      quoteCurrency,
+      quoteCurrency: quoteCurrencyForMarket(market, quoteCurrency),
     };
     state.holdings.push(holding);
   }
 
-  holding.quoteCurrency = isTwdQuotedSymbol(holding.symbol) ? "TWD" : holding.quoteCurrency || quoteCurrency;
+  holding.market = normalizeMarket(holding.market || inferMarket(holding.symbol));
+  holding.quoteCurrency = quoteCurrencyForMarket(holding.market, holding.quoteCurrency || quoteCurrency);
 
   const oldShares = numberValue(holding.shares);
   const oldCost = oldShares * numberValue(holding.avgCost);
@@ -4124,7 +4164,7 @@ function setupPriceRefreshTimer() {
 
 async function refreshCurrentPrices() {
   const targets = state.holdings
-    .map((holding) => ({ holding, quoteSymbol: quoteSymbolFor(holding.symbol) }))
+    .map((holding) => ({ holding, quoteSymbol: quoteSymbolFor(holding) }))
     .filter((item) => item.quoteSymbol);
 
   if (targets.length === 0) {
@@ -4142,7 +4182,8 @@ async function refreshCurrentPrices() {
       if (!Number.isFinite(price) || price <= 0) continue;
 
       item.holding.price = price;
-      item.holding.quoteCurrency = isTwdQuotedSymbol(item.holding.symbol) ? "TWD" : item.holding.quoteCurrency || state.currency;
+      item.holding.market = item.quoteSymbol.market;
+      item.holding.quoteCurrency = quoteCurrencyForMarket(item.quoteSymbol.market, item.holding.quoteCurrency || state.currency);
       updated += 1;
     }
 
@@ -4157,17 +4198,28 @@ async function refreshCurrentPrices() {
   }
 }
 
-function quoteSymbolFor(symbol) {
-  const map = {
-    VWRA: { source: "stooq", symbol: "vwra.uk" },
-    IMID: { source: "stooq", symbol: "imid.uk" },
-    AVGS: { source: "stooq", symbol: "avgs.uk" },
-    JPGL: { source: "stooq", symbol: "jpgl.uk" },
-    "0050": { source: "twse", symbol: "0050" },
-    "006208": { source: "twse", symbol: "006208" },
-    "0051": { source: "twse", symbol: "0051" },
-  };
-  return map[String(symbol ?? "").trim().toUpperCase()];
+function quoteSymbolFor(holding) {
+  const rawSymbol = typeof holding === "string" ? holding : holding?.symbol;
+  const symbol = String(rawSymbol ?? "").trim().toUpperCase();
+  if (!symbol) return null;
+
+  const selectedMarket = normalizeMarket(typeof holding === "string" ? "AUTO" : holding?.market);
+  const market = selectedMarket === "AUTO" ? inferMarket(symbol) : selectedMarket;
+
+  if (market === "TW") {
+    return { market, source: "twse", symbol: symbol.replace(/\.(TW|TWO)$/i, "") };
+  }
+
+  if (market === "UK") {
+    const base = symbol.replace(/\.(L|UK)$/i, "");
+    return { market, source: "stooq", symbol: `${base.toLowerCase()}.uk` };
+  }
+
+  if (market === "US") {
+    return { market, source: "yahoo", symbol: symbol.replace(/\.US$/i, "") };
+  }
+
+  return null;
 }
 
 async function fetchLatestPrice(quoteSymbol) {
@@ -4298,7 +4350,15 @@ function updateHolding(index, field, value) {
     holding[field] = value;
   }
 
-  holding.quoteCurrency = isTwdQuotedSymbol(holding.symbol) ? "TWD" : holding.quoteCurrency || state.currency;
+  if (field === "symbol" && normalizeMarket(holding.market) === "AUTO") {
+    holding.market = inferMarket(holding.symbol);
+  }
+
+  if (field === "market") {
+    holding.market = normalizeMarket(value);
+  }
+
+  holding.quoteCurrency = quoteCurrencyForMarket(normalizeMarket(holding.market || inferMarket(holding.symbol)), holding.quoteCurrency || state.currency);
   saveState();
 }
 
@@ -4370,7 +4430,7 @@ els.refreshPrices.addEventListener("click", () => {
 });
 
 els.addHolding.addEventListener("click", () => {
-  state.holdings.push({ symbol: "", name: "", shares: 0, avgCost: 0, price: 0, target: 0, quoteCurrency: state.currency });
+  state.holdings.push({ symbol: "", name: "", market: "AUTO", shares: 0, avgCost: 0, price: 0, target: 0, quoteCurrency: state.currency });
   render();
 });
 
@@ -4381,8 +4441,9 @@ els.holdingsBody.addEventListener("input", (event) => {
 });
 
 els.holdingsBody.addEventListener("change", (event) => {
-  const input = event.target.closest("input[data-field]");
+  const input = event.target.closest("input[data-field], select[data-field]");
   if (!input) return;
+  updateHolding(Number(input.dataset.index), input.dataset.field, input.value);
   render();
 });
 
@@ -4715,7 +4776,8 @@ function importPortfolioCsv(csvText) {
     const shareCount = parseNumber(shares.row[index]);
     if (shareCount === 0) continue;
 
-    const quoteCurrency = isTwdQuotedSymbol(symbol) ? "TWD" : "USD";
+    const market = inferMarket(symbol);
+    const quoteCurrency = quoteCurrencyForMarket(market, "USD");
     const priceInSourceCurrency = parseNumber(prices.row[index]);
     const marketValue = totalValues ? parseNumber(totalValues.row[index]) : shareCount * priceInSourceCurrency;
     const avgCostInSourceCurrency = shareCount > 0 ? marketValue / shareCount : priceInSourceCurrency;
@@ -4725,6 +4787,7 @@ function importPortfolioCsv(csvText) {
     holdings.push({
       symbol,
       name: symbol,
+      market,
       shares: shareCount,
       avgCost,
       price,
