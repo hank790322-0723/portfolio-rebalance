@@ -4291,13 +4291,32 @@ async function fetchYahooPrice(symbol) {
 }
 
 async function fetchTwsePrice(symbol) {
-  const date = new Date().toISOString().slice(0, 10).replaceAll("-", "");
-  const url = `https://www.twse.com.tw/rwd/zh/afterTrading/STOCK_DAY?date=${date}&stockNo=${encodeURIComponent(symbol)}&response=json`;
-  const text = await fetchTextWithFallback(url);
-  const data = JSON.parse(text);
-  const lastRow = data.data?.filter((row) => row?.[6] && row[6] !== "--").at(-1);
-  const price = Number(String(lastRow?.[6] ?? "").replaceAll(",", ""));
-  return Number.isFinite(price) ? price : null;
+  const yahooPrice = await fetchYahooTaiwanPrice(symbol);
+  if (Number.isFinite(yahooPrice) && yahooPrice > 0) return yahooPrice;
+  return fetchTwseOfficialPrice(symbol);
+}
+
+async function fetchTwseOfficialPrice(symbol) {
+  try {
+    const date = new Date().toISOString().slice(0, 10).replaceAll("-", "");
+    const url = `https://www.twse.com.tw/rwd/zh/afterTrading/STOCK_DAY?date=${date}&stockNo=${encodeURIComponent(symbol)}&response=json`;
+    const text = await fetchTextWithFallback(url);
+    const data = JSON.parse(text);
+    const lastRow = data.data?.filter((row) => row?.[6] && row[6] !== "--").at(-1);
+    const price = Number(String(lastRow?.[6] ?? "").replaceAll(",", ""));
+    return Number.isFinite(price) ? price : null;
+  } catch {
+    return null;
+  }
+}
+
+async function fetchYahooTaiwanPrice(symbol) {
+  const base = String(symbol ?? "").trim().replace(/\.(TW|TWO)$/i, "");
+  for (const suffix of ["TW", "TWO"]) {
+    const price = await fetchYahooPrice(`${base}.${suffix}`);
+    if (Number.isFinite(price) && price > 0) return price;
+  }
+  return null;
 }
 
 async function fetchTextWithFallback(url) {
