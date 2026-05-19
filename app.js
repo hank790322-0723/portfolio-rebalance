@@ -3749,6 +3749,16 @@ function quoteCurrencyForMarket(market, fallbackCurrency = defaultState.currency
   return fallbackCurrency || defaultState.currency;
 }
 
+function convertValueBetweenCurrencies(value, fromCurrency, toCurrency, fxRate) {
+  const sourceCurrency = fromCurrency || defaultState.currency;
+  const targetCurrency = toCurrency || defaultState.currency;
+  const rate = Math.max(numberValue(fxRate), 0.0001);
+  if (sourceCurrency === targetCurrency) return value;
+  if (sourceCurrency === "TWD" && targetCurrency !== "TWD") return value / rate;
+  if (sourceCurrency !== "TWD" && targetCurrency === "TWD") return value * rate;
+  return value;
+}
+
 function marketLabel(market) {
   return {
     AUTO: "\u81ea\u52d5",
@@ -3759,10 +3769,7 @@ function marketLabel(market) {
 }
 
 function convertToPortfolioCurrency(value, quoteCurrency) {
-  if (quoteCurrency === state.currency) return value;
-  if (quoteCurrency === "TWD" && state.currency !== "TWD") return value / Math.max(numberValue(state.fxRate), 0.0001);
-  if (quoteCurrency !== "TWD" && state.currency === "TWD") return value * numberValue(state.fxRate);
-  return value;
+  return convertValueBetweenCurrencies(value, quoteCurrency, state.currency, state.fxRate);
 }
 
 function pct(value) {
@@ -4283,17 +4290,25 @@ async function fetchStooqPrice(symbol) {
 }
 
 async function fetchYahooPrice(symbol) {
-  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?range=1d&interval=1m`;
-  const text = await fetchTextWithFallback(url);
-  const data = JSON.parse(text);
-  const result = data.chart?.result?.[0];
-  const regularPrice = Number(result?.meta?.regularMarketPrice);
-  if (Number.isFinite(regularPrice) && regularPrice > 0) return regularPrice;
+  const encoded = encodeURIComponent(symbol);
+  for (const host of ["query1.finance.yahoo.com", "query2.finance.yahoo.com"]) {
+    const url = `https://${host}/v8/finance/chart/${encoded}?range=1d&interval=1m`;
+    try {
+      const text = await fetchTextWithFallback(url);
+      const data = JSON.parse(text);
+      const result = data.chart?.result?.[0];
+      const regularPrice = Number(result?.meta?.regularMarketPrice);
+      if (Number.isFinite(regularPrice) && regularPrice > 0) return regularPrice;
 
-  const closes = result?.indicators?.quote?.[0]?.close || [];
-  const lastClose = [...closes].reverse().find((value) => Number.isFinite(Number(value)));
-  const price = Number(lastClose);
-  return Number.isFinite(price) && price > 0 ? price : null;
+      const closes = result?.indicators?.quote?.[0]?.close || [];
+      const lastClose = [...closes].reverse().find((value) => Number.isFinite(Number(value)));
+      const price = Number(lastClose);
+      if (Number.isFinite(price) && price > 0) return price;
+    } catch {
+      // Try the next Yahoo host, then let the caller fall back to another source.
+    }
+  }
+  return null;
 }
 
 async function fetchTwsePrice(symbol) {
@@ -4319,8 +4334,12 @@ async function fetchTwseOfficialPrice(symbol) {
 async function fetchYahooTaiwanPrice(symbol) {
   const base = String(symbol ?? "").trim().replace(/\.(TW|TWO)$/i, "");
   for (const suffix of ["TW", "TWO"]) {
-    const price = await fetchYahooPrice(`${base}.${suffix}`);
-    if (Number.isFinite(price) && price > 0) return price;
+    try {
+      const price = await fetchYahooPrice(`${base}.${suffix}`);
+      if (Number.isFinite(price) && price > 0) return price;
+    } catch {
+      // Continue to the next Taiwan suffix.
+    }
   }
   return null;
 }
@@ -4774,10 +4793,13 @@ function importPortfolioCsv(csvText) {
   const byLabel = new Map();
 
   for (const row of rows) {
-    const labelIndex = row.findIndex((cell) => cell.trim().length > 0 && !isNumericLike(cell));
-    if (labelIndex >= 0) {
-      byLabel.set(row[labelIndex].trim(), { row, labelIndex });
-    }
+    row.forEach((cell, labelIndex) => {
+      const label = cell.trim();
+      if (label && !isNumericLike(label) && !byLabel.has(label)) {
+        byLabel.set(label, { row, labelIndex });
+        byLabel.set(label.toLowerCase(), { row, labelIndex });
+      }
+    });
   }
 
   const symbols = byLabel.get("\u6a19\u7684");
@@ -4786,6 +4808,8 @@ function importPortfolioCsv(csvText) {
   const prices = byLabel.get("\u5e02\u503c");
   const totalValues = byLabel.get("\u7e3d\u50f9\u503c");
   const netValue = byLabel.get("\u76ee\u524d\u6de8\u503c");
+  const importCurrency = normalizeCurrency(findLabeledCellValue(byLabel, ["Currency", "\u5e63\u5225", "\u8a08\u50f9\u5e63\u5225"]) || state.currency || defaultState.currency);
+  const importFxRate = parseNumber(findLabeledCellValue(byLabel, ["TWD FX", "\u532f\u7387", "\u7f8e\u5143\u532f\u7387"])) || numberValue(state.fxRate) || numberValue(defaultState.fxRate);
 
   if (!symbols || !targets || !shares || !prices) {
     throw new Error(text.invalidCsv);
@@ -4802,12 +4826,10 @@ function importPortfolioCsv(csvText) {
     if (shareCount === 0) continue;
 
     const market = inferMarket(symbol);
-    const quoteCurrency = quoteCurrencyForMarket(market, "USD");
-    const priceInSourceCurrency = parseNumber(prices.row[index]);
-    const marketValue = totalValues ? parseNumber(totalValues.row[index]) : shareCount * priceInSourceCurrency;
-    const avgCostInSourceCurrency = shareCount > 0 ? marketValue / shareCount : priceInSourceCurrency;
-    const price = quoteCurrency === "TWD" ? priceInSourceCurrency * 31.3 : priceInSourceCurrency;
-    const avgCost = quoteCurrency === "TWD" ? avgCostInSourceCurrency * 31.3 : avgCostInSourceCurrency;
+    const quoteCurrency = quoteCurrencyForMarket(market, importCurrency);
+    const price = parseNumber(prices.row[index]);
+    const totalCost = totalValues ? parseNumber(totalValues.row[index]) : shareCount * price;
+    const avgCost = shareCount > 0 ? totalCost / shareCount : price;
 
     holdings.push({
       symbol,
@@ -4828,17 +4850,34 @@ function importPortfolioCsv(csvText) {
   const importedTotal = netValue ? parseNumber(netValue.row[netValue.labelIndex + 1]) : 0;
   const stockValue = holdings.reduce((sum, holding) => {
     const value = holding.shares * holding.price;
-    return sum + (holding.quoteCurrency === "TWD" ? value / 31.3 : value);
+    return sum + convertValueBetweenCurrencies(value, holding.quoteCurrency, importCurrency, importFxRate);
   }, 0);
   const cash = importedTotal > stockValue ? importedTotal - stockValue : 0;
 
   return {
     ...structuredClone(defaultState),
     cash,
-    currency: "USD",
-    fxRate: 31.3,
+    currency: importCurrency,
+    fxRate: importFxRate,
     holdings,
   };
+}
+
+function findLabeledCellValue(byLabel, labels) {
+  for (const label of labels) {
+    const match = byLabel.get(label) || byLabel.get(label.toLowerCase()) || byLabel.get(label.toUpperCase());
+    const value = match?.row[match.labelIndex + 1]?.trim();
+    if (value) return value;
+  }
+  return "";
+}
+
+function normalizeCurrency(value) {
+  const currency = String(value || defaultState.currency).trim().toUpperCase();
+  if (["TWD", "\u53f0\u5e63", "\u65b0\u53f0\u5e63"].includes(currency)) return "TWD";
+  if (["USD", "\u7f8e\u5143", "\u7f8e\u91d1"].includes(currency)) return "USD";
+  if (["JPY", "\u65e5\u5713", "\u65e5\u5e63"].includes(currency)) return "JPY";
+  return currency || defaultState.currency;
 }
 
 function parseCsv(csvText) {
