@@ -4300,14 +4300,21 @@ async function fetchUsdTwdRate() {
       url: "https://open.er-api.com/v6/latest/USD",
       parse: (data) => Number(data.rates?.TWD),
     },
+    {
+      url: "https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@latest/v1/currencies/usd/twd.json",
+      parse: (data) => Number(data.twd),
+    },
+    {
+      url: "https://latest.currency-api.pages.dev/v1/currencies/usd/twd.json",
+      parse: (data) => Number(data.twd),
+    },
   ];
 
   let lastError = null;
   for (const endpoint of endpoints) {
     try {
-      const response = await fetch(endpoint.url, { cache: "no-store" });
-      if (!response.ok) throw new Error("Request failed");
-      const data = await response.json();
+      const text = await fetchTextWithFallback(endpoint.url);
+      const data = JSON.parse(text);
       const rate = endpoint.parse(data);
       if (Number.isFinite(rate) && rate > 0) return rate;
     } catch (error) {
