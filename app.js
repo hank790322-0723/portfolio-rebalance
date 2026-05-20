@@ -3495,6 +3495,7 @@ const els = {
   thresholdInput: document.querySelector("#thresholdInput"),
   currencySelect: document.querySelector("#currencySelect"),
   fxRateInput: document.querySelector("#fxRateInput"),
+  refreshFxRate: document.querySelector("#refreshFxRate"),
   priceRefreshInterval: document.querySelector("#priceRefreshInterval"),
   priceProxyUrl: document.querySelector("#priceProxyUrl"),
   refreshPrices: document.querySelector("#refreshPrices"),
@@ -4244,10 +4245,11 @@ async function refreshCurrentPrices() {
     return;
   }
 
-  setPriceStatus("Updating prices...");
+  setPriceStatus("Updating FX and prices...");
 
   try {
     let updated = 0;
+    await refreshLiveFxRate({ silent: true });
 
     for (const item of targets) {
       const price = await fetchLatestPrice(item.quoteSymbol);
@@ -4268,6 +4270,52 @@ async function refreshCurrentPrices() {
   } catch {
     setPriceStatus("Price update failed. Browser or data source may have blocked the request.");
   }
+}
+
+async function refreshLiveFxRate(options = {}) {
+  if (!options.silent) setPriceStatus("Updating USD/TWD FX...");
+
+  const rate = await fetchUsdTwdRate();
+  if (!Number.isFinite(rate) || rate <= 0) {
+    throw new Error("Invalid FX rate");
+  }
+
+  state.fxRate = Number(rate.toFixed(4));
+  if (els.fxRateInput) els.fxRateInput.value = state.fxRate;
+  saveState();
+  if (!options.silent) {
+    setPriceStatus(`USD/TWD FX updated to ${state.fxRate} at ${new Date().toLocaleTimeString("zh-TW", { hour: "2-digit", minute: "2-digit" })}.`);
+    render();
+  }
+  return state.fxRate;
+}
+
+async function fetchUsdTwdRate() {
+  const endpoints = [
+    {
+      url: "https://fxapi.app/api/USD/TWD.json",
+      parse: (data) => Number(data.rate),
+    },
+    {
+      url: "https://open.er-api.com/v6/latest/USD",
+      parse: (data) => Number(data.rates?.TWD),
+    },
+  ];
+
+  let lastError = null;
+  for (const endpoint of endpoints) {
+    try {
+      const response = await fetch(endpoint.url, { cache: "no-store" });
+      if (!response.ok) throw new Error("Request failed");
+      const data = await response.json();
+      const rate = endpoint.parse(data);
+      if (Number.isFinite(rate) && rate > 0) return rate;
+    } catch (error) {
+      lastError = error;
+    }
+  }
+
+  throw lastError || new Error("FX update failed");
 }
 
 function quoteSymbolFor(holding) {
@@ -4516,6 +4564,14 @@ els.currencySelect.addEventListener("change", (event) => {
 els.fxRateInput.addEventListener("input", (event) => {
   state.fxRate = numberValue(event.target.value);
   render();
+});
+
+els.refreshFxRate.addEventListener("click", async () => {
+  try {
+    await refreshLiveFxRate();
+  } catch {
+    setPriceStatus("FX update failed. Please try again later.");
+  }
 });
 
 els.priceRefreshInterval.addEventListener("change", (event) => {
