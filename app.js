@@ -4569,9 +4569,32 @@ els.currencySelect.addEventListener("change", (event) => {
 });
 
 els.fxRateInput.addEventListener("input", (event) => {
-  state.fxRate = numberValue(event.target.value);
-  render();
+  const parsed = Number(event.target.value);
+  if (Number.isFinite(parsed) && parsed > 0) {
+    state.fxRate = parsed;
+    saveState();
+  }
 });
+
+els.fxRateInput.addEventListener("change", () => {
+  commitFxRateInput();
+});
+
+els.fxRateInput.addEventListener("keydown", (event) => {
+  if (event.key !== "Enter") return;
+  event.preventDefault();
+  commitFxRateInput();
+  els.fxRateInput.blur();
+});
+
+function commitFxRateInput() {
+  const parsed = Number(els.fxRateInput.value);
+  if (Number.isFinite(parsed) && parsed > 0) {
+    state.fxRate = parsed;
+  }
+  els.fxRateInput.value = state.fxRate;
+  render();
+}
 
 els.refreshFxRate.addEventListener("click", async () => {
   try {
