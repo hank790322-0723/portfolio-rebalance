@@ -1,4 +1,4 @@
-const storageKey = "rebalance-site-state-v9";
+﻿const storageKey = "rebalance-site-state-v9";
 const historyKey = "rebalance-performance-history-v3";
 
 const initialPerformanceHistory = [
@@ -3514,11 +3514,14 @@ const els = {
   recordSnapshot: document.querySelector("#recordSnapshot"),
   clearHistory: document.querySelector("#clearHistory"),
   tradeForm: document.querySelector("#tradeForm"),
+  tradeType: document.querySelector("#tradeType"),
   tradeDate: document.querySelector("#tradeDate"),
   tradeSymbol: document.querySelector("#tradeSymbol"),
   tradeShares: document.querySelector("#tradeShares"),
   tradePrice: document.querySelector("#tradePrice"),
   tradeCurrency: document.querySelector("#tradeCurrency"),
+  tradeFee: document.querySelector("#tradeFee"),
+  tradeFeeMode: document.querySelector("#tradeFeeMode"),
   tradeStatus: document.querySelector("#tradeStatus"),
   symbolList: document.querySelector("#symbolList"),
   tradesBody: document.querySelector("#tradesBody"),
@@ -3970,7 +3973,7 @@ function renderTradeTools() {
 
   if (transactions.length === 0) {
     const row = document.createElement("tr");
-    row.innerHTML = `<td class="empty-state" colspan="7">No trades yet</td>`;
+    row.innerHTML = `<td class="empty-state" colspan="9">No trades yet</td>`;
     els.tradesBody.append(row);
     return;
   }
@@ -3981,13 +3984,17 @@ function renderTradeTools() {
     .forEach((trade) => {
       const originalIndex = transactions.indexOf(trade);
       const row = document.createElement("tr");
-      const amount = numberValue(trade.shares) * numberValue(trade.price);
+      const grossAmount = numberValue(trade.shares) * numberValue(trade.price);
+      const feeAmount = tradeFeeAmount(trade);
+      const amount = trade.type === "sell" ? Math.max(0, grossAmount - feeAmount) : grossAmount + feeAmount;
       row.innerHTML = `
         <td>${escapeHtml(trade.date)}</td>
+        <td>${tradeTypeLabel(trade.type)}</td>
         <td>${escapeHtml(trade.symbol)}</td>
         <td class="number">${numberValue(trade.shares).toLocaleString("zh-TW")}</td>
         <td class="number">${numberValue(trade.price).toLocaleString("zh-TW", { maximumFractionDigits: 4 })}</td>
         <td>${escapeHtml(trade.currency)}</td>
+        <td class="number">${formatTradeFee(trade)}</td>
         <td class="number">${amount.toLocaleString("zh-TW", { maximumFractionDigits: 2 })}</td>
         <td><button class="delete-row" data-delete-trade="${originalIndex}" type="button" title="Delete">&times;</button></td>
       `;
@@ -3998,9 +4005,10 @@ function renderTradeTools() {
 function addBuyTransaction(trade) {
   const date = trade.date || todayString();
   const symbol = String(trade.symbol || "").trim().toUpperCase();
+  const type = trade.type === "sell" ? "sell" : "buy";
 
   if (!symbol || trade.shares <= 0 || trade.price <= 0) {
-    setTradeStatus("請輸入股票代號、股數和買入價格。");
+    setTradeStatus("\u8acb\u8f38\u5165\u6b63\u78ba\u7684\u6a19\u7684\u3001\u80a1\u6578\u548c\u50f9\u683c\u3002");
     return;
   }
 
@@ -4008,6 +4016,11 @@ function addBuyTransaction(trade) {
   let holding = state.holdings.find((item) => String(item.symbol).toUpperCase() === symbol);
 
   if (!holding) {
+    if (type === "sell") {
+      setTradeStatus("\u627e\u4e0d\u5230\u53ef\u8ce3\u51fa\u7684\u6301\u80a1\u3002");
+      return;
+    }
+
     const market = inferMarket(symbol);
     holding = {
       symbol,
@@ -4027,30 +4040,56 @@ function addBuyTransaction(trade) {
 
   const oldShares = numberValue(holding.shares);
   const oldCost = oldShares * numberValue(holding.avgCost);
-  const buyPrice = convertPriceToQuoteCurrency(trade.price, trade.currency, holding.quoteCurrency);
-  const buyCost = trade.shares * buyPrice;
-  const newShares = oldShares + trade.shares;
+  const tradePrice = convertPriceToQuoteCurrency(trade.price, trade.currency, holding.quoteCurrency);
+  const feeAmount = tradeFeeAmount(trade);
+  const feeInQuoteCurrency = convertPriceToQuoteCurrency(feeAmount, trade.currency, holding.quoteCurrency);
 
-  holding.shares = newShares;
-  holding.avgCost = newShares > 0 ? (oldCost + buyCost) / newShares : 0;
-  if (numberValue(holding.price) === 0) {
-    holding.price = buyPrice;
+  if (type === "sell" && trade.shares > oldShares) {
+    setTradeStatus("\u8ce3\u51fa\u80a1\u6578\u4e0d\u80fd\u5927\u65bc\u76ee\u524d\u6301\u6709\u80a1\u6578\u3002");
+    return;
+  }
+
+  let saleCostBasis = 0;
+  let proceedsInPortfolioCurrency = 0;
+
+  if (type === "sell") {
+    saleCostBasis = numberValue(holding.avgCost);
+    const grossProceeds = trade.shares * tradePrice;
+    const netProceeds = Math.max(0, grossProceeds - feeInQuoteCurrency);
+    proceedsInPortfolioCurrency = convertValueBetweenCurrencies(netProceeds, holding.quoteCurrency, state.currency, state.fxRate);
+    holding.shares = Math.max(0, oldShares - trade.shares);
+    holding.avgCost = holding.shares > 0 ? saleCostBasis : 0;
+    state.cash = numberValue(state.cash) + proceedsInPortfolioCurrency;
+  } else {
+    const buyCost = trade.shares * tradePrice + feeInQuoteCurrency;
+    const newShares = oldShares + trade.shares;
+    holding.shares = newShares;
+    holding.avgCost = newShares > 0 ? (oldCost + buyCost) / newShares : 0;
+    if (numberValue(holding.price) === 0) {
+      holding.price = tradePrice;
+    }
   }
 
   state.transactions = Array.isArray(state.transactions) ? state.transactions : [];
   state.transactions.push({
+    type,
     date,
     symbol,
     shares: trade.shares,
     price: trade.price,
     currency: trade.currency,
+    fee: trade.fee,
+    feeMode: trade.feeMode,
+    saleCostBasis,
+    proceedsInPortfolioCurrency,
   });
 
   els.tradeShares.value = "";
   els.tradePrice.value = "";
+  if (els.tradeFee) els.tradeFee.value = "";
   els.tradeDate.value = date;
   els.tradeSymbol.value = symbol;
-  setTradeStatus(`已新增 ${symbol}：${trade.shares.toLocaleString("zh-TW")} 股，買入價 ${trade.price.toLocaleString("zh-TW", { maximumFractionDigits: 4 })}。`);
+  setTradeStatus(`${type === "sell" ? "\u5df2\u8ce3\u51fa" : "\u5df2\u8cb7\u5165"} ${symbol} ${trade.shares.toLocaleString("zh-TW")} \u80a1\u3002`);
   saveState();
   render();
 }
@@ -4067,28 +4106,54 @@ function removeBuyTransaction(index) {
 
   const holding = state.holdings.find((item) => String(item.symbol).toUpperCase() === String(trade.symbol).toUpperCase());
   if (holding) {
+    const type = trade.type === "sell" ? "sell" : "buy";
     const oldShares = numberValue(holding.shares);
     const oldCost = oldShares * numberValue(holding.avgCost);
     const tradePrice = convertPriceToQuoteCurrency(trade.price, trade.currency, holding.quoteCurrency);
-    const tradeCost = numberValue(trade.shares) * tradePrice;
-    const newShares = Math.max(0, oldShares - numberValue(trade.shares));
-    const newCost = Math.max(0, oldCost - tradeCost);
+    const feeInQuoteCurrency = convertPriceToQuoteCurrency(tradeFeeAmount(trade), trade.currency, holding.quoteCurrency);
+    const tradeShares = numberValue(trade.shares);
 
-    holding.shares = newShares;
-    holding.avgCost = newShares > 0 ? newCost / newShares : 0;
+    if (type === "sell") {
+      const newShares = oldShares + tradeShares;
+      const restoredCost = oldCost + tradeShares * numberValue(trade.saleCostBasis || holding.avgCost);
+      holding.shares = newShares;
+      holding.avgCost = newShares > 0 ? restoredCost / newShares : 0;
+      state.cash = numberValue(state.cash) - numberValue(trade.proceedsInPortfolioCurrency);
+    } else {
+      const tradeCost = tradeShares * tradePrice + feeInQuoteCurrency;
+      const newShares = Math.max(0, oldShares - tradeShares);
+      const newCost = Math.max(0, oldCost - tradeCost);
+      holding.shares = newShares;
+      holding.avgCost = newShares > 0 ? newCost / newShares : 0;
+    }
   }
 
   state.transactions.splice(index, 1);
   saveState();
 }
 
-function convertPriceToQuoteCurrency(price, fromCurrency, toCurrency) {
-  if (fromCurrency === toCurrency) return numberValue(price);
-  if (fromCurrency === "TWD" && toCurrency !== "TWD") return numberValue(price) / Math.max(numberValue(state.fxRate), 0.0001);
-  if (fromCurrency !== "TWD" && toCurrency === "TWD") return numberValue(price) * numberValue(state.fxRate);
-  return numberValue(price);
+function tradeFeeAmount(trade) {
+  const fee = numberValue(trade.fee);
+  if (fee <= 0) return 0;
+  const grossAmount = numberValue(trade.shares) * numberValue(trade.price);
+  return trade.feeMode === "percent" ? grossAmount * (fee / 100) : fee;
 }
 
+function formatTradeFee(trade) {
+  const amount = tradeFeeAmount(trade);
+  if (trade.feeMode === "percent") {
+    return `${numberValue(trade.fee).toLocaleString("zh-TW", { maximumFractionDigits: 4 })}% (${amount.toLocaleString("zh-TW", { maximumFractionDigits: 2 })})`;
+  }
+  return amount.toLocaleString("zh-TW", { maximumFractionDigits: 2 });
+}
+
+function tradeTypeLabel(type) {
+  return type === "sell" ? "\u8ce3\u51fa" : "\u8cb7\u5165";
+}
+
+function convertPriceToQuoteCurrency(price, fromCurrency, toCurrency) {
+  return convertValueBetweenCurrencies(numberValue(price), fromCurrency, toCurrency, state.fxRate);
+}
 function switchProfile(profileId) {
   syncActiveProfile();
   const profile = state.profiles.find((item) => item.id === profileId);
@@ -4516,11 +4581,14 @@ els.tradeSymbol.addEventListener("input", () => {
 els.tradeForm.addEventListener("submit", (event) => {
   event.preventDefault();
   addBuyTransaction({
+    type: els.tradeType.value,
     date: els.tradeDate.value || todayString(),
     symbol: els.tradeSymbol.value.trim().toUpperCase(),
     shares: numberValue(els.tradeShares.value),
     price: numberValue(els.tradePrice.value),
     currency: els.tradeCurrency.value,
+    fee: numberValue(els.tradeFee.value),
+    feeMode: els.tradeFeeMode.value,
   });
 });
 
@@ -4808,7 +4876,7 @@ function importPortfolioCsv(csvText) {
   const prices = byLabel.get("\u5e02\u503c");
   const totalValues = byLabel.get("\u7e3d\u50f9\u503c");
   const netValue = byLabel.get("\u76ee\u524d\u6de8\u503c");
-  const importCurrency = normalizeCurrency(findLabeledCellValue(byLabel, ["Currency", "\u5e63\u5225", "\u8a08\u50f9\u5e63\u5225"]) || state.currency || defaultState.currency);
+  const importCurrencyInput = findLabeledCellValue(byLabel, ["Currency", "\u5e63\u5225", "\u8a08\u50f9\u5e63\u5225"]);
   const importFxRate = parseNumber(findLabeledCellValue(byLabel, ["TWD FX", "\u532f\u7387", "\u7f8e\u5143\u532f\u7387"])) || numberValue(state.fxRate) || numberValue(defaultState.fxRate);
 
   if (!symbols || !targets || !shares || !prices) {
@@ -4816,6 +4884,7 @@ function importPortfolioCsv(csvText) {
   }
 
   const start = symbols.labelIndex + 1;
+  const importCurrency = importCurrencyInput ? normalizeCurrency(importCurrencyInput) : inferCsvPortfolioCurrency(symbols.row.slice(start), state.currency || defaultState.currency);
   const holdings = [];
 
   for (let index = start; index < symbols.row.length; index += 1) {
@@ -4878,6 +4947,10 @@ function normalizeCurrency(value) {
   if (["USD", "\u7f8e\u5143", "\u7f8e\u91d1"].includes(currency)) return "USD";
   if (["JPY", "\u65e5\u5713", "\u65e5\u5e63"].includes(currency)) return "JPY";
   return currency || defaultState.currency;
+}
+
+function inferCsvPortfolioCurrency(symbols, fallbackCurrency) {
+  return symbols.some((symbol) => inferMarket(symbol) === "TW") ? "TWD" : normalizeCurrency(fallbackCurrency);
 }
 
 function parseCsv(csvText) {
@@ -5034,3 +5107,4 @@ function escapeSpreadsheetCell(value) {
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;");
 }
+

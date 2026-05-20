@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>&#32929;&#31080;&#20877;&#24179;&#34913;&#33287;&#25613;&#30410;</title>
-    <link rel="stylesheet" href="styles.css?v=20260511-4" />
+    <link rel="stylesheet" href="styles.css?v=20260511-5" />
   </head>
   <body>
     <main class="app-shell">
@@ -12,7 +12,7 @@
         <div>
           <p class="eyebrow">Portfolio Rebalance</p>
           <h1>&#32929;&#31080;&#20877;&#24179;&#34913;&#33287;&#25613;&#30410;</h1>
-          <p class="version-note">&#29256;&#26412; 2026-05-11-4</p>
+          <p class="version-note">&#29256;&#26412; 2026-05-11-5</p>
         </div>
         <div class="top-actions" aria-label="data actions">
           <button id="exportJson" class="icon-button" type="button" title="Export JSON">&darr;</button>
@@ -134,11 +134,18 @@
       <section class="trade-band" aria-label="trades">
         <div class="trade-header">
           <div>
-            <h2>&#36023;&#20837;&#35352;&#37636;</h2>
-            <p>&#36664;&#20837;&#36023;&#20837;&#26085;&#26399;&#12289;&#27161;&#30340;&#12289;&#32929;&#25976;&#21644;&#20729;&#26684;&#65292;&#26371;&#33258;&#21205;&#26356;&#26032;&#32929;&#25976;&#21644;&#22343;&#20729;&#12290;</p>
+            <h2>&#20132;&#26131;&#35352;&#37636;</h2>
+            <p>&#36664;&#20837;&#36023;&#20837;&#25110;&#36067;&#20986;&#35352;&#37636;&#65292;&#26371;&#33258;&#21205;&#26356;&#26032;&#32929;&#25976;&#12289;&#22343;&#20729;&#21644;&#29694;&#37329;&#12290;</p>
           </div>
         </div>
         <form id="tradeForm" class="trade-form" novalidate>
+          <label>
+            &#39006;&#22411;
+            <select id="tradeType">
+              <option value="buy">&#36023;&#20837;</option>
+              <option value="sell">&#36067;&#20986;</option>
+            </select>
+          </label>
           <label>
             &#26085;&#26399;
             <input id="tradeDate" type="date" required />
@@ -153,7 +160,7 @@
             <input id="tradeShares" type="number" min="0" step="1" required inputmode="decimal" />
           </label>
           <label>
-            &#36023;&#20837;&#20729;&#26684;
+            &#20132;&#26131;&#20729;&#26684;
             <input id="tradePrice" type="number" min="0" step="0.01" required inputmode="decimal" />
           </label>
           <label>
@@ -165,7 +172,18 @@
               <option value="EUR">EUR</option>
             </select>
           </label>
-          <button class="primary-button" type="submit">&#26032;&#22686;&#36023;&#20837;</button>
+          <label>
+            &#25163;&#32396;&#36027;
+            <input id="tradeFee" type="number" min="0" step="0.01" inputmode="decimal" placeholder="0" />
+          </label>
+          <label>
+            &#25163;&#32396;&#36027;&#35336;&#31639;
+            <select id="tradeFeeMode">
+              <option value="fixed">&#22266;&#23450;&#37329;&#38989;</option>
+              <option value="percent">%</option>
+            </select>
+          </label>
+          <button class="primary-button" type="submit">&#26032;&#22686;&#20132;&#26131;</button>
         </form>
         <p id="tradeStatus" class="trade-status"></p>
         <div class="table-wrap trade-table-wrap">
@@ -173,10 +191,12 @@
             <thead>
               <tr>
                 <th>&#26085;&#26399;</th>
+                <th>&#39006;&#22411;</th>
                 <th>&#27161;&#30340;</th>
                 <th>&#32929;&#25976;</th>
                 <th>&#20729;&#26684;</th>
                 <th>&#24163;&#21029;</th>
+                <th>&#25163;&#32396;&#36027;</th>
                 <th>&#37329;&#38989;</th>
                 <th></th>
               </tr>
@@ -218,7 +238,7 @@
       </section>
     </main>
 
-    <script src="config.js?v=20260511-4"></script>
-    <script src="app.js?v=20260511-4"></script>
+    <script src="config.js?v=20260511-5"></script>
+    <script src="app.js?v=20260511-5"></script>
   </body>
 </html>

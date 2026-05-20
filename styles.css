@@ -433,7 +433,7 @@ tbody tr:last-child td {
 
 .trade-form {
   display: grid;
-  grid-template-columns: minmax(150px, 0.7fr) minmax(140px, 0.8fr) minmax(120px, 0.6fr) minmax(140px, 0.7fr) minmax(120px, 0.5fr) auto;
+  grid-template-columns: minmax(110px, 0.5fr) minmax(150px, 0.7fr) minmax(140px, 0.8fr) minmax(120px, 0.6fr) minmax(140px, 0.7fr) minmax(120px, 0.5fr) minmax(120px, 0.5fr) minmax(130px, 0.6fr) auto;
   gap: 12px;
   align-items: end;
   margin-top: 14px;
@@ -450,7 +450,7 @@ tbody tr:last-child td {
 }
 
 .trade-table {
-  min-width: 760px;
+  min-width: 940px;
 }
 
 .chart-header {
