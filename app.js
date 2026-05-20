@@ -3961,7 +3961,7 @@ function renderTradeTools() {
     .join("");
 
   if (!els.tradeDate.value) {
-    els.tradeDate.value = new Date().toISOString().slice(0, 10);
+    els.tradeDate.value = todayString();
   }
 
   const symbol = els.tradeSymbol.value.trim();
@@ -4218,7 +4218,30 @@ function restoreOriginalAssets() {
 }
 
 function todayString() {
-  return new Date().toISOString().slice(0, 10);
+  return taiwanDateString();
+}
+
+function taiwanDateString(date = new Date()) {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Taipei",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(date);
+  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return `${values.year}-${values.month}-${values.day}`;
+}
+
+function taiwanDateTimeString(date = new Date()) {
+  const day = taiwanDateString(date);
+  const time = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Asia/Taipei",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  }).format(date);
+  return `${day} ${time}`;
 }
 
 function setupPriceRefreshTimer() {
@@ -4758,8 +4781,8 @@ function autoRecordToday(portfolio) {
 
 function upsertTodaySnapshot(portfolio, force) {
   const now = new Date();
-  const today = now.toISOString().slice(0, 10);
-  const stamp = force ? now.toISOString().slice(0, 19).replace("T", " ") : today;
+  const today = taiwanDateString(now);
+  const stamp = force ? taiwanDateTimeString(now) : today;
   const value = toTwd(portfolio.totalMarketValue);
   const cost = toTwd(portfolio.totalCost);
   const existing = performanceHistory.find((item) => item.date === today);
@@ -4819,7 +4842,7 @@ function getFilteredPerformanceHistory() {
   const months = numberValue(range);
   const cutoff = new Date(now);
   cutoff.setMonth(cutoff.getMonth() - months);
-  const cutoffText = cutoff.toISOString().slice(0, 10);
+  const cutoffText = taiwanDateString(cutoff);
   return history.filter((item) => String(item.date).slice(0, 10) >= cutoffText);
 }
 
