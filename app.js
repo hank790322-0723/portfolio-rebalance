@@ -4905,12 +4905,13 @@ async function refreshComparisonSeries() {
   if (els.comparisonStatus) els.comparisonStatus.textContent = "\u6b63\u5728\u8f09\u5165\u6bd4\u8f03\u6a19\u7684\u6b77\u53f2\u50f9\u683c...";
   const startDate = String(history[0].date).slice(0, 10);
   const endDate = String(history[history.length - 1].date).slice(0, 10);
+  const lookupStartDate = comparisonLookupStartDate(startDate);
   const results = [];
   for (let index = 0; index < items.length; index += 1) {
     if (requestId !== comparisonRequestId) return;
     const item = items[index];
     if (els.comparisonStatus) els.comparisonStatus.textContent = `\u6b63\u5728\u8f09\u5165\u6bd4\u8f03\u6a19\u7684 ${index + 1} / ${items.length}: ${item.symbol}`;
-    const points = await fetchComparisonHistory(item, startDate, endDate);
+    const points = await fetchComparisonHistory(item, lookupStartDate, endDate);
     results.push({ ...item, label: item.symbol, color: comparisonColors[index % comparisonColors.length], points });
   }
   if (requestId !== comparisonRequestId) return;
@@ -4920,9 +4921,15 @@ async function refreshComparisonSeries() {
   if (els.comparisonStatus) {
     els.comparisonStatus.textContent = missing > 0
       ? `\u5df2\u8f09\u5165 ${comparisonSeries.length} \u6a94\uff0c${missing} \u6a94\u627e\u4e0d\u5230\u540c\u671f\u8cc7\u6599\u3002`
-      : `\u5df2\u8f09\u5165 ${comparisonSeries.length} \u500b\u6bd4\u8f03\u6a19\u7684\uff0c\u5340\u9593 ${startDate} - ${endDate}\u3002`;
+      : `\u5df2\u8f09\u5165 ${comparisonSeries.length} \u500b\u6bd4\u8f03\u6a19\u7684\uff0c\u5340\u9593 ${startDate} - ${endDate}\u3002\u4f11\u5e02\u65e5\u6cbf\u7528\u6700\u8fd1\u6536\u76e4\u50f9\u3002`;
   }
   renderPerformanceChart(twdFormatter());
+}
+
+function comparisonLookupStartDate(startDate) {
+  const date = new Date(`${startDate}T12:00:00+08:00`);
+  date.setDate(date.getDate() - 10);
+  return taiwanDateString(date);
 }
 
 async function fetchComparisonHistory(item, startDate, endDate) {
@@ -5083,7 +5090,7 @@ function renderComparisonResults(history, series) {
     usesCostReturnMetric()
       ? costReturnResult(history)
       : comparisonResult("\u6295\u8cc7\u7d44\u5408", "#0f766e", history, true),
-    ...series.map((item) => comparisonResult(item.label, item.color, item.points, false)),
+    ...series.map((item) => comparisonResult(item.label, item.color, alignComparisonPoints(item.points, history), false)),
   ].filter(Boolean);
   if (results.length === 0) {
     els.comparisonResults.innerHTML = "";
@@ -5126,6 +5133,23 @@ function getCostReturnPoints(history) {
       const profit = Number(point.value) - cost;
       return { ...point, cost, profit, performance: (profit / cost) * 100 };
     });
+}
+
+function alignComparisonPoints(points, history) {
+  const timeline = [...new Set(history.map((point) => String(point.date).slice(0, 10)))];
+  const prices = points
+    .filter((point) => point.date && Number.isFinite(Number(point.value)) && Number(point.value) > 0)
+    .map((point) => ({ date: String(point.date).slice(0, 10), value: Number(point.value) }))
+    .sort((left, right) => left.date.localeCompare(right.date));
+  let priceIndex = -1;
+  return timeline.map((date) => {
+    while (priceIndex + 1 < prices.length && prices[priceIndex + 1].date <= date) {
+      priceIndex += 1;
+    }
+    if (priceIndex < 0) return null;
+    const source = prices[priceIndex];
+    return { date, value: source.value, sourceDate: source.date };
+  }).filter(Boolean);
 }
 
 function costReturnResult(history) {
@@ -5249,7 +5273,7 @@ function drawComparisonChart(ctx, width, height, history, benchmarkSeries) {
   const portfolioPoints = usesCostReturnMetric() ? getCostReturnPoints(history) : normalizePerformancePoints(history);
   const allSeries = [
     { label: usesCostReturnMetric() ? "\u6295\u8cc7\u7d44\u5408\uff08\u6263\u6210\u672c\uff09" : "\u6295\u8cc7\u7d44\u5408", color: "#0f766e", points: portfolioPoints },
-    ...benchmarkSeries.map((series) => ({ ...series, points: normalizePerformancePoints(series.points) })),
+    ...benchmarkSeries.map((series) => ({ ...series, points: normalizePerformancePoints(alignComparisonPoints(series.points, history)) })),
   ].filter((series) => series.points.length > 0);
   const values = allSeries.flatMap((series) => series.points.map((point) => point.performance));
   const rawMin = Math.min(...values, 0);
@@ -5363,7 +5387,10 @@ function comparisonTooltipHtml(nearest) {
     <strong>${escapeHtml(selectedDate)}</strong><br>
     ${points.map((point) => {
       const pointDate = String(point.item.date).slice(0, 10);
-      const dateText = pointDate === selectedDate ? "" : ` (${escapeHtml(pointDate)})`;
+      const sourceDate = String(point.item.sourceDate || "").slice(0, 10);
+      const dateText = sourceDate && sourceDate !== selectedDate
+        ? ` (\u6cbf\u7528 ${escapeHtml(sourceDate)})`
+        : pointDate === selectedDate ? "" : ` (${escapeHtml(pointDate)})`;
       return `<span style="color:${point.color}">\u25a0</span> ${escapeHtml(point.label)} ${escapeHtml(pct(point.performance))}${dateText}`;
     }).join("<br>")}
   `;
