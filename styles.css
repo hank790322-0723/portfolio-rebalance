@@ -537,7 +537,8 @@ tbody tr:last-child td {
 .chart-tooltip {
   position: absolute;
   z-index: 3;
-  min-width: 180px;
+  min-width: 210px;
+  max-width: min(320px, calc(100vw - 36px));
   border: 1px solid var(--line);
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.96);

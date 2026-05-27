@@ -3482,6 +3482,7 @@ let priceRefreshTimer = null;
 let chartHoverState = null;
 let comparisonSeries = [];
 let comparisonLoading = false;
+let comparisonRequestId = 0;
 const comparisonColors = ["#2563eb", "#dc2626", "#d97706", "#7c3aed", "#0891b2", "#db2777"];
 
 const els = {
@@ -4867,16 +4868,21 @@ function renderComparisonControls() {
 }
 
 async function refreshComparisonSeries() {
-  const items = Array.isArray(state.comparisonSymbols) ? state.comparisonSymbols : [];
+  const requestId = ++comparisonRequestId;
+  const items = Array.isArray(state.comparisonSymbols) ? state.comparisonSymbols.map((item) => ({ ...item })) : [];
   const history = getFilteredPerformanceHistory();
   if (items.length === 0) {
     comparisonSeries = [];
+    comparisonLoading = false;
     if (els.comparisonStatus) els.comparisonStatus.textContent = "";
     renderPerformanceChart(twdFormatter());
     return;
   }
   if (history.length < 2) {
+    comparisonSeries = [];
+    comparisonLoading = false;
     if (els.comparisonStatus) els.comparisonStatus.textContent = "\u7e3e\u6548\u8a18\u9304\u4e0d\u8db3\uff0c\u7121\u6cd5\u6bd4\u8f03\u540c\u671f\u5831\u916c\u3002";
+    renderPerformanceChart(twdFormatter());
     return;
   }
 
@@ -4886,8 +4892,9 @@ async function refreshComparisonSeries() {
   const endDate = String(history[history.length - 1].date).slice(0, 10);
   const results = await Promise.all(items.map(async (item, index) => {
     const points = await fetchComparisonHistory(item, startDate, endDate);
-    return { ...item, color: comparisonColors[index % comparisonColors.length], points };
+    return { ...item, label: item.symbol, color: comparisonColors[index % comparisonColors.length], points };
   }));
+  if (requestId !== comparisonRequestId) return;
   comparisonSeries = results.filter((item) => item.points.length > 0);
   comparisonLoading = false;
   const missing = items.length - comparisonSeries.length;
@@ -5143,6 +5150,7 @@ function drawComparisonChart(ctx, width, height, history, benchmarkSeries) {
   }
 
   const hoverPoints = [];
+  const renderedSeries = [];
   allSeries.forEach((series) => {
     const points = series.points.map((point) => {
       const time = Date.parse(`${String(point.date).slice(0, 10)}T00:00:00Z`);
@@ -5152,6 +5160,7 @@ function drawComparisonChart(ctx, width, height, history, benchmarkSeries) {
       hoverPoints.push(chartPoint);
       return chartPoint;
     });
+    renderedSeries.push({ label: series.label, color: series.color, points });
     ctx.beginPath();
     points.forEach((point, index) => {
       if (index === 0) ctx.moveTo(point.x, point.y);
@@ -5161,7 +5170,7 @@ function drawComparisonChart(ctx, width, height, history, benchmarkSeries) {
     ctx.lineWidth = (series.label === "\u6295\u8cc7\u7d44\u5408" ? 3 : 2) * (window.devicePixelRatio || 1);
     ctx.stroke();
   });
-  chartHoverState = { points: hoverPoints, dpr: window.devicePixelRatio || 1, comparison: true };
+  chartHoverState = { points: hoverPoints, series: renderedSeries, dpr: window.devicePixelRatio || 1, comparison: true };
   ctx.fillStyle = "#667282";
   ctx.fillText(startDate, pad.left, height - 18);
   ctx.textAlign = "right";
@@ -5203,7 +5212,7 @@ function showChartTooltip(event) {
   const displayX = nearest.x / chartHoverState.dpr;
   const displayY = nearest.y / chartHoverState.dpr;
   els.chartTooltip.innerHTML = chartHoverState.comparison
-    ? `<strong>${escapeHtml(nearest.label)}</strong><br>${escapeHtml(nearest.item.date)}<br>\u7e3e\u6548 ${escapeHtml(pct(nearest.performance))}`
+    ? comparisonTooltipHtml(nearest)
     : `
       <strong>${escapeHtml(nearest.item.date)}</strong><br>
       \u5e02\u503c ${escapeHtml(chartHoverState.format.format(Number(nearest.item.value)))}<br>
@@ -5212,6 +5221,22 @@ function showChartTooltip(event) {
   els.chartTooltip.hidden = false;
   els.chartTooltip.style.left = `${els.performanceChart.offsetLeft + Math.min(displayX + 18, rect.width - 200)}px`;
   els.chartTooltip.style.top = `${els.performanceChart.offsetTop + Math.max(10, displayY - 58)}px`;
+}
+
+function comparisonTooltipHtml(nearest) {
+  const selectedDate = String(nearest.item.date).slice(0, 10);
+  const points = chartHoverState.series.map((series) => {
+    const point = series.points.reduce((best, item) => Math.abs(item.x - nearest.x) < Math.abs(best.x - nearest.x) ? item : best);
+    return { ...point, label: series.label, color: series.color };
+  });
+  return `
+    <strong>${escapeHtml(selectedDate)}</strong><br>
+    ${points.map((point) => {
+      const pointDate = String(point.item.date).slice(0, 10);
+      const dateText = pointDate === selectedDate ? "" : ` (${escapeHtml(pointDate)})`;
+      return `<span style="color:${point.color}">\u25a0</span> ${escapeHtml(point.label)} ${escapeHtml(pct(point.performance))}${dateText}`;
+    }).join("<br>")}
+  `;
 }
 
 function importPortfolioCsv(csvText) {
