@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>&#32929;&#31080;&#20877;&#24179;&#34913;&#33287;&#25613;&#30410;</title>
-    <link rel="stylesheet" href="styles.css?v=20260511-5" />
+    <link rel="stylesheet" href="styles.css?v=20260527-1" />
   </head>
   <body>
     <main class="app-shell">
@@ -12,7 +12,7 @@
         <div>
           <p class="eyebrow">Portfolio Rebalance</p>
           <h1>&#32929;&#31080;&#20877;&#24179;&#34913;&#33287;&#25613;&#30410;</h1>
-          <p class="version-note">&#29256;&#26412; 2026-05-11-5</p>
+          <p class="version-note">&#29256;&#26412; 2026-05-27-1</p>
         </div>
         <div class="top-actions" aria-label="data actions">
           <button id="exportJson" class="icon-button" type="button" title="Export JSON">&darr;</button>
@@ -234,12 +234,31 @@
             <button id="clearHistory" class="secondary-button danger" type="button">&#28165;&#31354;&#27511;&#21490;</button>
           </div>
         </div>
+        <form id="comparisonForm" class="comparison-form">
+          <label>
+            &#27604;&#36611;&#27161;&#30340;
+            <input id="comparisonSymbol" type="text" placeholder="0050 / SPY / VWRA.L" required />
+          </label>
+          <label>
+            &#24066;&#22580;
+            <select id="comparisonMarket">
+              <option value="AUTO">&#33258;&#21205;</option>
+              <option value="TW">&#21488;&#32929;</option>
+              <option value="US">&#32654;&#32929;</option>
+              <option value="UK">&#33521;&#32929;</option>
+            </select>
+          </label>
+          <button class="secondary-button" type="submit">+ &#21152;&#20837;&#27604;&#36611;</button>
+          <button id="refreshComparisons" class="secondary-button" type="button">&#26356;&#26032;&#27604;&#36611;</button>
+        </form>
+        <div id="comparisonList" class="comparison-list"></div>
+        <p id="comparisonStatus" class="comparison-status"></p>
         <canvas id="performanceChart" width="1200" height="360"></canvas>
         <div id="chartTooltip" class="chart-tooltip" hidden></div>
       </section>
     </main>
 
-    <script src="config.js?v=20260511-5"></script>
-    <script src="app.js?v=20260511-5"></script>
+    <script src="config.js?v=20260527-1"></script>
+    <script src="app.js?v=20260527-1"></script>
   </body>
 </html>
