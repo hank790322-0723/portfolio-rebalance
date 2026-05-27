@@ -527,6 +527,45 @@ tbody tr:last-child td {
   color: var(--muted);
 }
 
+.comparison-results {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(185px, 1fr));
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.comparison-result {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fbfcfd;
+  padding: 10px;
+}
+
+.comparison-result strong {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 0.92rem;
+}
+
+.comparison-result span {
+  display: block;
+  margin-top: 7px;
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.comparison-result b {
+  display: block;
+  margin-top: 5px;
+  font-size: 1rem;
+}
+
+.comparison-result .result-detail {
+  color: var(--text);
+  font-size: 0.82rem;
+}
+
 #performanceChart {
   display: block;
   width: 100%;

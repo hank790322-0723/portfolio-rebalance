@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>&#32929;&#31080;&#20877;&#24179;&#34913;&#33287;&#25613;&#30410;</title>
-    <link rel="stylesheet" href="styles.css?v=20260527-3" />
+    <link rel="stylesheet" href="styles.css?v=20260527-5" />
   </head>
   <body>
     <main class="app-shell">
@@ -12,7 +12,7 @@
         <div>
           <p class="eyebrow">Portfolio Rebalance</p>
           <h1>&#32929;&#31080;&#20877;&#24179;&#34913;&#33287;&#25613;&#30410;</h1>
-          <p class="version-note">&#29256;&#26412; 2026-05-27-3</p>
+          <p class="version-note">&#29256;&#26412; 2026-05-27-5</p>
         </div>
         <div class="top-actions" aria-label="data actions">
           <button id="exportJson" class="icon-button" type="button" title="Export JSON">&darr;</button>
@@ -222,8 +222,14 @@
             <p id="chartStatus">&#35352;&#37636;&#27599;&#27425;&#26356;&#26032;&#24460;&#30340;&#21488;&#24163;&#28136;&#20540;&#12290;</p>
           </div>
           <div class="chart-actions">
+            <select id="chartMetric" aria-label="performance metric">
+              <option value="market">&#24066;&#20540;&#35722;&#21205;</option>
+              <option value="costReturn">&#25187;&#38500;&#25104;&#26412;&#22577;&#37228;</option>
+            </select>
             <select id="chartRange" aria-label="performance range">
               <option value="all">&#20840;&#37096;</option>
+              <option value="1w">1W</option>
+              <option value="mtd">&#26412;&#26376;</option>
               <option value="1">1M</option>
               <option value="3">3M</option>
               <option value="6">6M</option>
@@ -253,12 +259,13 @@
         </form>
         <div id="comparisonList" class="comparison-list"></div>
         <p id="comparisonStatus" class="comparison-status"></p>
+        <div id="comparisonResults" class="comparison-results"></div>
         <canvas id="performanceChart" width="1200" height="360"></canvas>
         <div id="chartTooltip" class="chart-tooltip" hidden></div>
       </section>
     </main>
 
-    <script src="config.js?v=20260527-3"></script>
-    <script src="app.js?v=20260527-3"></script>
+    <script src="config.js?v=20260527-5"></script>
+    <script src="app.js?v=20260527-5"></script>
   </body>
 </html>

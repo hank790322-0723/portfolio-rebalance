@@ -3463,6 +3463,7 @@ const defaultState = {
   priceRefreshInterval: 0,
   priceProxyUrl: globalThis.PRICE_PROXY_URL || "",
   chartRange: "all",
+  chartMetric: "market",
   comparisonSymbols: [],
   holdings: [
     { symbol: "VWRA", name: "VWRA", market: "UK", shares: 65, avgCost: 116.63, price: 186.12, target: 35, quoteCurrency: "USD" },
@@ -3515,6 +3516,7 @@ const els = {
   resetData: document.querySelector("#resetData"),
   performanceChart: document.querySelector("#performanceChart"),
   chartRange: document.querySelector("#chartRange"),
+  chartMetric: document.querySelector("#chartMetric"),
   chartTooltip: document.querySelector("#chartTooltip"),
   chartStatus: document.querySelector("#chartStatus"),
   comparisonForm: document.querySelector("#comparisonForm"),
@@ -3522,6 +3524,7 @@ const els = {
   comparisonMarket: document.querySelector("#comparisonMarket"),
   comparisonList: document.querySelector("#comparisonList"),
   comparisonStatus: document.querySelector("#comparisonStatus"),
+  comparisonResults: document.querySelector("#comparisonResults"),
   refreshComparisons: document.querySelector("#refreshComparisons"),
   recordSnapshot: document.querySelector("#recordSnapshot"),
   clearHistory: document.querySelector("#clearHistory"),
@@ -3594,6 +3597,7 @@ function normalizeProfile(profile) {
     priceRefreshInterval: numberValue(profile.priceRefreshInterval),
     priceProxyUrl: profile.priceProxyUrl || globalThis.PRICE_PROXY_URL || "",
     chartRange: profile.chartRange || "all",
+    chartMetric: profile.chartMetric || "market",
     comparisonSymbols: Array.isArray(profile.comparisonSymbols) ? profile.comparisonSymbols : [],
     holdings: Array.isArray(profile.holdings) && profile.holdings.length > 0 ? profile.holdings.map((holding) => normalizeHoldingCurrency(holding, profile.currency)) : structuredClone(defaultState.holdings),
     transactions: Array.isArray(profile.transactions) ? profile.transactions : [],
@@ -3620,6 +3624,7 @@ function getProfileData(source) {
     priceRefreshInterval: source.priceRefreshInterval,
     priceProxyUrl: source.priceProxyUrl,
     chartRange: source.chartRange || "all",
+    chartMetric: source.chartMetric || "market",
     comparisonSymbols: Array.isArray(source.comparisonSymbols) ? source.comparisonSymbols : [],
     holdings: Array.isArray(source.holdings) ? source.holdings : [],
     transactions: Array.isArray(source.transactions) ? source.transactions : [],
@@ -3838,6 +3843,7 @@ function render() {
   if (els.priceRefreshInterval) els.priceRefreshInterval.value = state.priceRefreshInterval || 0;
   if (els.priceProxyUrl) els.priceProxyUrl.value = state.priceProxyUrl || globalThis.PRICE_PROXY_URL || "";
   if (els.chartRange) els.chartRange.value = state.chartRange || "all";
+  if (els.chartMetric) els.chartMetric.value = state.chartMetric || "market";
   setMetric(els.totalMarketValue, format.format(portfolio.totalMarketValue), toTwd(portfolio.totalMarketValue));
   setMetric(els.totalCost, format.format(portfolio.totalCost), toTwd(portfolio.totalCost));
   setMetric(els.totalProfit, signedMoney(portfolio.totalProfit, format), toTwd(portfolio.totalProfit), true);
@@ -4654,6 +4660,12 @@ els.chartRange.addEventListener("change", (event) => {
   refreshComparisonSeries();
 });
 
+els.chartMetric.addEventListener("change", (event) => {
+  state.chartMetric = event.target.value;
+  render();
+  refreshComparisonSeries();
+});
+
 els.comparisonForm.addEventListener("submit", (event) => {
   event.preventDefault();
   const symbol = els.comparisonSymbol.value.trim().toUpperCase();
@@ -4854,7 +4866,7 @@ function renderComparisonControls() {
   const portfolioChip = `
     <span class="comparison-chip">
       <span class="comparison-swatch" style="background:#0f766e"></span>
-      \u6295\u8cc7\u7d44\u5408
+      ${usesCostReturnMetric() ? "\u6295\u8cc7\u7d44\u5408\uff08\u6263\u6210\u672c\uff09" : "\u6295\u8cc7\u7d44\u5408"}
     </span>
   `;
   const chips = items.map((item, index) => `
@@ -4875,6 +4887,7 @@ async function refreshComparisonSeries() {
     comparisonSeries = [];
     comparisonLoading = false;
     if (els.comparisonStatus) els.comparisonStatus.textContent = "";
+    if (els.comparisonResults) els.comparisonResults.innerHTML = "";
     renderPerformanceChart(twdFormatter());
     return;
   }
@@ -4887,6 +4900,8 @@ async function refreshComparisonSeries() {
   }
 
   comparisonLoading = true;
+  comparisonSeries = [];
+  renderPerformanceChart(twdFormatter());
   if (els.comparisonStatus) els.comparisonStatus.textContent = "\u6b63\u5728\u8f09\u5165\u6bd4\u8f03\u6a19\u7684\u6b77\u53f2\u50f9\u683c...";
   const startDate = String(history[0].date).slice(0, 10);
   const endDate = String(history[history.length - 1].date).slice(0, 10);
@@ -5005,13 +5020,25 @@ function renderPerformanceChart(format) {
 
   const chartHistory = getFilteredPerformanceHistory();
   const hasComparisons = Array.isArray(state.comparisonSymbols) && state.comparisonSymbols.length > 0;
-  if (hasComparisons) {
-    drawComparisonChart(ctx, canvas.width, canvas.height, chartHistory, comparisonSeries);
+  const costReturnMetric = usesCostReturnMetric();
+  const visibleComparisonSeries = hasComparisons ? comparisonSeries : [];
+  if (hasComparisons || costReturnMetric) {
+    drawComparisonChart(ctx, canvas.width, canvas.height, chartHistory, visibleComparisonSeries);
+    renderComparisonResults(chartHistory, visibleComparisonSeries);
   } else {
     drawChart(ctx, canvas.width, canvas.height, format, chartHistory);
+    if (els.comparisonResults) els.comparisonResults.innerHTML = "";
   }
 
-  if (chartHistory.length <= 1) {
+  if (costReturnMetric) {
+    const costPoints = getCostReturnPoints(chartHistory);
+    if (costPoints.length === 0) {
+      els.chartStatus.textContent = "\u76ee\u524d\u671f\u9593\u6c92\u6709\u542b\u6210\u672c\u7684\u7e3e\u6548\u7d00\u9304\uff1b\u8acb\u5148\u8a18\u9304\u4eca\u65e5\uff0c\u4e4b\u5f8c\u5c31\u80fd\u8ffd\u8e64\u6263\u9664\u6210\u672c\u5f8c\u7684\u5831\u916c\u3002";
+    } else {
+      const last = costPoints[costPoints.length - 1];
+      els.chartStatus.textContent = `\u6263\u9664\u6210\u672c\u5f8c\u5831\u916c ${pct(last.performance)}\uff0c\u76ee\u524d\u640d\u76ca ${signedMoney(last.profit, twdFormatter())}\u3002\u820a\u7d00\u9304\u82e5\u6c92\u6709\u5132\u5b58\u6210\u672c\uff0c\u4e0d\u5217\u5165\u6b64\u6a21\u5f0f\u3002`;
+    }
+  } else if (chartHistory.length <= 1) {
     els.chartStatus.textContent = text.historyOnePoint;
   } else {
     const first = chartHistory[0].value;
@@ -5030,15 +5057,93 @@ function getFilteredPerformanceHistory() {
 
   const now = new Date();
   if (range === "ytd") {
-    const year = String(now.getFullYear());
+    const year = taiwanDateString(now).slice(0, 4);
     return history.filter((item) => String(item.date).slice(0, 4) === year);
+  }
+
+  if (range === "mtd") {
+    const month = taiwanDateString(now).slice(0, 7);
+    return history.filter((item) => String(item.date).slice(0, 7) === month);
   }
 
   const months = numberValue(range);
   const cutoff = new Date(now);
-  cutoff.setMonth(cutoff.getMonth() - months);
+  if (range === "1w") {
+    cutoff.setDate(cutoff.getDate() - 7);
+  } else {
+    cutoff.setMonth(cutoff.getMonth() - months);
+  }
   const cutoffText = taiwanDateString(cutoff);
   return history.filter((item) => String(item.date).slice(0, 10) >= cutoffText);
+}
+
+function renderComparisonResults(history, series) {
+  if (!els.comparisonResults) return;
+  const results = [
+    usesCostReturnMetric()
+      ? costReturnResult(history)
+      : comparisonResult("\u6295\u8cc7\u7d44\u5408", "#0f766e", history, true),
+    ...series.map((item) => comparisonResult(item.label, item.color, item.points, false)),
+  ].filter(Boolean);
+  if (results.length === 0) {
+    els.comparisonResults.innerHTML = "";
+    return;
+  }
+  els.comparisonResults.innerHTML = results.map((item) => `
+    <article class="comparison-result">
+      <strong><i class="comparison-swatch" style="background:${item.color}"></i>${escapeHtml(item.label)}</strong>
+      <span>${escapeHtml(item.from)} \u2192 ${escapeHtml(item.to)}</span>
+      <b class="${item.returnRate >= 0 ? "profit" : "loss"}">${escapeHtml(item.summary)}</b>
+      ${item.detail ? `<span class="result-detail">${escapeHtml(item.detail)}</span>` : ""}
+    </article>
+  `).join("");
+}
+
+function comparisonResult(label, color, points, isPortfolio) {
+  const valid = points.filter((point) => Number.isFinite(Number(point.value)));
+  if (valid.length < 2) return null;
+  const first = Number(valid[0].value);
+  const last = Number(valid[valid.length - 1].value);
+  const difference = last - first;
+  const returnRate = first > 0 ? (difference / first) * 100 : 0;
+  const format = isPortfolio
+    ? (value) => twdFormatter().format(value)
+    : (value) => value.toLocaleString("zh-TW", { maximumFractionDigits: 4 });
+  const sign = difference > 0 ? "+" : "";
+  const change = `${sign}${format(difference)}`;
+  return { label, color, from: format(first), to: format(last), summary: `${change} (${pct(returnRate)})`, returnRate };
+}
+
+function usesCostReturnMetric() {
+  return state.chartMetric === "costReturn";
+}
+
+function getCostReturnPoints(history) {
+  return history
+    .filter((point) => Number.isFinite(Number(point.value)) && Number(point.cost) > 0)
+    .map((point) => {
+      const cost = Number(point.cost);
+      const profit = Number(point.value) - cost;
+      return { ...point, cost, profit, performance: (profit / cost) * 100 };
+    });
+}
+
+function costReturnResult(history) {
+  const points = getCostReturnPoints(history);
+  if (points.length === 0) return null;
+  const first = points[0];
+  const last = points[points.length - 1];
+  const difference = last.performance - first.performance;
+  const sign = difference > 0 ? "+" : "";
+  return {
+    label: "\u6295\u8cc7\u7d44\u5408\uff08\u6263\u6210\u672c\uff09",
+    color: "#0f766e",
+    from: pct(first.performance),
+    to: pct(last.performance),
+    summary: `\u671f\u9593\u8b8a\u5316 ${sign}${difference.toFixed(2)} \u500b\u767e\u5206\u9ede`,
+    detail: `\u76ee\u524d\u640d\u76ca ${signedMoney(last.profit, twdFormatter())} / \u6210\u672c ${twdFormatter().format(last.cost)}`,
+    returnRate: last.performance,
+  };
 }
 
 function drawChart(ctx, width, height, format, history) {
@@ -5141,13 +5246,11 @@ function drawComparisonChart(ctx, width, height, history, benchmarkSeries) {
   const endDate = String(history[history.length - 1].date).slice(0, 10);
   const startMs = Date.parse(`${startDate}T00:00:00Z`);
   const endMs = Math.max(Date.parse(`${endDate}T00:00:00Z`), startMs + 86400000);
+  const portfolioPoints = usesCostReturnMetric() ? getCostReturnPoints(history) : normalizePerformancePoints(history);
   const allSeries = [
-    { label: "\u6295\u8cc7\u7d44\u5408", color: "#0f766e", points: history },
-    ...benchmarkSeries,
-  ].map((series) => ({
-    ...series,
-    points: normalizePerformancePoints(series.points),
-  })).filter((series) => series.points.length > 0);
+    { label: usesCostReturnMetric() ? "\u6295\u8cc7\u7d44\u5408\uff08\u6263\u6210\u672c\uff09" : "\u6295\u8cc7\u7d44\u5408", color: "#0f766e", points: portfolioPoints },
+    ...benchmarkSeries.map((series) => ({ ...series, points: normalizePerformancePoints(series.points) })),
+  ].filter((series) => series.points.length > 0);
   const values = allSeries.flatMap((series) => series.points.map((point) => point.performance));
   const rawMin = Math.min(...values, 0);
   const rawMax = Math.max(...values, 0);
@@ -5188,8 +5291,14 @@ function drawComparisonChart(ctx, width, height, history, benchmarkSeries) {
       else ctx.lineTo(point.x, point.y);
     });
     ctx.strokeStyle = series.color;
-    ctx.lineWidth = (series.label === "\u6295\u8cc7\u7d44\u5408" ? 3 : 2) * (window.devicePixelRatio || 1);
+    ctx.lineWidth = (series.color === "#0f766e" ? 3 : 2) * (window.devicePixelRatio || 1);
     ctx.stroke();
+    ctx.fillStyle = series.color;
+    points.forEach((point) => {
+      ctx.beginPath();
+      ctx.arc(point.x, point.y, 4 * (window.devicePixelRatio || 1), 0, Math.PI * 2);
+      ctx.fill();
+    });
   });
   chartHoverState = { points: hoverPoints, series: renderedSeries, dpr: window.devicePixelRatio || 1, comparison: true };
   ctx.fillStyle = "#667282";
