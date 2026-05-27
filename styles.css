@@ -566,6 +566,27 @@ tbody tr:last-child td {
   font-size: 0.82rem;
 }
 
+.risk-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  padding-top: 9px;
+  margin: 9px 0 0;
+  border-top: 1px solid var(--line);
+}
+
+.risk-metrics dt {
+  color: var(--muted);
+  font-size: 0.76rem;
+}
+
+.risk-metrics dd {
+  margin: 4px 0 0;
+  color: var(--text);
+  font-size: 0.86rem;
+  font-weight: 700;
+}
+
 #performanceChart {
   display: block;
   width: 100%;

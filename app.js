@@ -5034,7 +5034,7 @@ function renderPerformanceChart(format) {
     renderComparisonResults(chartHistory, visibleComparisonSeries);
   } else {
     drawChart(ctx, canvas.width, canvas.height, format, chartHistory);
-    if (els.comparisonResults) els.comparisonResults.innerHTML = "";
+    renderComparisonResults(chartHistory, []);
   }
 
   if (costReturnMetric) {
@@ -5102,6 +5102,7 @@ function renderComparisonResults(history, series) {
       <span>${escapeHtml(item.from)} \u2192 ${escapeHtml(item.to)}</span>
       <b class="${item.returnRate >= 0 ? "profit" : "loss"}">${escapeHtml(item.summary)}</b>
       ${item.detail ? `<span class="result-detail">${escapeHtml(item.detail)}</span>` : ""}
+      ${riskMetricsHtml(item.risk)}
     </article>
   `).join("");
 }
@@ -5118,7 +5119,7 @@ function comparisonResult(label, color, points, isPortfolio) {
     : (value) => value.toLocaleString("zh-TW", { maximumFractionDigits: 4 });
   const sign = difference > 0 ? "+" : "";
   const change = `${sign}${format(difference)}`;
-  return { label, color, from: format(first), to: format(last), summary: `${change} (${pct(returnRate)})`, returnRate };
+  return { label, color, from: format(first), to: format(last), summary: `${change} (${pct(returnRate)})`, returnRate, risk: calculateRiskMetrics(valid) };
 }
 
 function usesCostReturnMetric() {
@@ -5152,6 +5153,46 @@ function alignComparisonPoints(points, history) {
   }).filter(Boolean);
 }
 
+function calculateRiskMetrics(points, valueSelector = (point) => Number(point.value)) {
+  const dailyValues = new Map();
+  points.forEach((point) => {
+    const date = String(point.date || "").slice(0, 10);
+    const value = Number(valueSelector(point));
+    if (date && Number.isFinite(value) && value > 0) dailyValues.set(date, value);
+  });
+  const values = [...dailyValues.values()];
+  if (values.length === 0) return { volatility: null, sharpe: null, maxDrawdown: null };
+  let peak = values[0];
+  let maxDrawdown = 0;
+  values.forEach((value) => {
+    peak = Math.max(peak, value);
+    maxDrawdown = Math.max(maxDrawdown, (peak - value) / peak);
+  });
+  const returns = values.slice(1).map((value, index) => (value / values[index]) - 1);
+  if (returns.length < 2) return { volatility: null, sharpe: null, maxDrawdown: maxDrawdown * 100 };
+  const mean = returns.reduce((total, value) => total + value, 0) / returns.length;
+  const variance = returns.reduce((total, value) => total + ((value - mean) ** 2), 0) / (returns.length - 1);
+  const deviation = Math.sqrt(variance);
+  const annualFactor = Math.sqrt(252);
+  return {
+    volatility: deviation * annualFactor * 100,
+    sharpe: deviation > 0 ? (mean / deviation) * annualFactor : null,
+    maxDrawdown: maxDrawdown * 100,
+  };
+}
+
+function riskMetricsHtml(risk) {
+  const percentage = (value) => Number.isFinite(value) ? pct(value) : "--";
+  const ratio = (value) => Number.isFinite(value) ? value.toFixed(2) : "--";
+  return `
+    <dl class="risk-metrics">
+      <div><dt>\u6ce2\u52d5\u5ea6</dt><dd>${escapeHtml(percentage(risk?.volatility))}</dd></div>
+      <div><dt>\u590f\u666e\u503c</dt><dd>${escapeHtml(ratio(risk?.sharpe))}</dd></div>
+      <div><dt>\u6700\u5927\u4e0b\u8dcc</dt><dd>${escapeHtml(percentage(risk?.maxDrawdown))}</dd></div>
+    </dl>
+  `;
+}
+
 function costReturnResult(history) {
   const points = getCostReturnPoints(history);
   if (points.length === 0) return null;
@@ -5167,6 +5208,7 @@ function costReturnResult(history) {
     summary: `\u671f\u9593\u8b8a\u5316 ${sign}${difference.toFixed(2)} \u500b\u767e\u5206\u9ede`,
     detail: `\u76ee\u524d\u640d\u76ca ${signedMoney(last.profit, twdFormatter())} / \u6210\u672c ${twdFormatter().format(last.cost)}`,
     returnRate: last.performance,
+    risk: calculateRiskMetrics(points, (point) => 1 + (point.performance / 100)),
   };
 }
 
