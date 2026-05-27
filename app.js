@@ -4890,10 +4890,14 @@ async function refreshComparisonSeries() {
   if (els.comparisonStatus) els.comparisonStatus.textContent = "\u6b63\u5728\u8f09\u5165\u6bd4\u8f03\u6a19\u7684\u6b77\u53f2\u50f9\u683c...";
   const startDate = String(history[0].date).slice(0, 10);
   const endDate = String(history[history.length - 1].date).slice(0, 10);
-  const results = await Promise.all(items.map(async (item, index) => {
+  const results = [];
+  for (let index = 0; index < items.length; index += 1) {
+    if (requestId !== comparisonRequestId) return;
+    const item = items[index];
+    if (els.comparisonStatus) els.comparisonStatus.textContent = `\u6b63\u5728\u8f09\u5165\u6bd4\u8f03\u6a19\u7684 ${index + 1} / ${items.length}: ${item.symbol}`;
     const points = await fetchComparisonHistory(item, startDate, endDate);
-    return { ...item, label: item.symbol, color: comparisonColors[index % comparisonColors.length], points };
-  }));
+    results.push({ ...item, label: item.symbol, color: comparisonColors[index % comparisonColors.length], points });
+  }
   if (requestId !== comparisonRequestId) return;
   comparisonSeries = results.filter((item) => item.points.length > 0);
   comparisonLoading = false;
@@ -4908,6 +4912,8 @@ async function refreshComparisonSeries() {
 
 async function fetchComparisonHistory(item, startDate, endDate) {
   for (const symbol of comparisonYahooSymbols(item)) {
+    const localPoints = await fetchLocalProxyHistory(symbol, startDate, endDate);
+    if (localPoints.length > 0) return localPoints;
     const proxiedPoints = await fetchConfiguredProxyHistory(symbol, startDate, endDate);
     if (proxiedPoints.length > 0) return proxiedPoints;
     const points = await fetchYahooHistoricalPrices(symbol, startDate, endDate);
@@ -4916,19 +4922,34 @@ async function fetchComparisonHistory(item, startDate, endDate) {
   return [];
 }
 
+async function fetchLocalProxyHistory(symbol, startDate, endDate) {
+  try {
+    const isLocalHost = ["localhost", "127.0.0.1"].includes(location.hostname) || /^192\.168\./.test(location.hostname);
+    if (!isLocalHost) return [];
+    const root = location.protocol.startsWith("http") ? location.origin : "http://127.0.0.1:4173";
+    return await fetchProxyHistory(root, symbol, startDate, endDate);
+  } catch {
+    return [];
+  }
+}
+
 async function fetchConfiguredProxyHistory(symbol, startDate, endDate) {
   const proxyUrl = String(state.priceProxyUrl || globalThis.PRICE_PROXY_URL || "").trim();
   if (!proxyUrl) return [];
   try {
-    const root = proxyUrl.replace(/\/$/, "");
-    const url = `${root}/api/history?symbol=${encodeURIComponent(symbol)}&start=${encodeURIComponent(startDate)}&end=${encodeURIComponent(endDate)}`;
-    const response = await fetch(url, { cache: "no-store" });
-    if (!response.ok) return [];
-    const data = await response.json();
-    return Array.isArray(data.points) ? data.points.filter((point) => point.date && Number.isFinite(Number(point.value))) : [];
+    return await fetchProxyHistory(proxyUrl, symbol, startDate, endDate);
   } catch {
     return [];
   }
+}
+
+async function fetchProxyHistory(baseUrl, symbol, startDate, endDate) {
+  const root = String(baseUrl).replace(/\/$/, "");
+  const url = `${root}/api/history?symbol=${encodeURIComponent(symbol)}&start=${encodeURIComponent(startDate)}&end=${encodeURIComponent(endDate)}`;
+  const response = await fetch(url, { cache: "no-store" });
+  if (!response.ok) return [];
+  const data = await response.json();
+  return Array.isArray(data.points) ? data.points.filter((point) => point.date && Number.isFinite(Number(point.value))) : [];
 }
 
 function comparisonYahooSymbols(item) {
