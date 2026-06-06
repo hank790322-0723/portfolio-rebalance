@@ -4291,28 +4291,42 @@ async function refreshCurrentPrices() {
 
   setPriceStatus("Updating FX and prices...");
 
+  let fxUpdated = true;
   try {
-    let updated = 0;
     await refreshLiveFxRate({ silent: true });
+  } catch {
+    fxUpdated = false;
+  }
 
-    for (const item of targets) {
+  let updated = 0;
+  const failed = [];
+  for (const item of targets) {
+    try {
       const price = await fetchLatestPrice(item.quoteSymbol);
-      if (!Number.isFinite(price) || price <= 0) continue;
+      if (!Number.isFinite(price) || price <= 0) {
+        failed.push(item.holding.symbol);
+        continue;
+      }
 
       item.holding.price = price;
       item.holding.market = item.quoteSymbol.market;
       item.holding.quoteCurrency = quoteCurrencyForMarket(item.quoteSymbol.market, item.holding.quoteCurrency || state.currency);
       updated += 1;
+    } catch {
+      failed.push(item.holding.symbol);
     }
+  }
 
-    if (updated === 0) {
-      throw new Error("No prices returned");
-    }
-
-    setPriceStatus(`Updated ${updated} prices at ${new Date().toLocaleTimeString("zh-TW", { hour: "2-digit", minute: "2-digit" })}.`);
+  const time = new Date().toLocaleTimeString("zh-TW", { hour: "2-digit", minute: "2-digit" });
+  if (updated > 0) {
+    const fxText = fxUpdated ? "" : "\uff0c\u532f\u7387\u6cbf\u7528\u76ee\u524d\u503c";
+    const failedText = failed.length > 0 ? `\uff0c${failed.length} \u6a94\u5931\u6557: ${failed.join(", ")}` : "";
+    setPriceStatus(`Updated ${updated} prices at ${time}${fxText}${failedText}.`);
     render();
-  } catch {
-    setPriceStatus("Price update failed. Browser or data source may have blocked the request.");
+  } else {
+    const fxText = fxUpdated ? "" : "\u532f\u7387\u4e5f\u66ab\u6642\u7121\u6cd5\u66f4\u65b0\uff1b";
+    const failedText = failed.length > 0 ? `\u5931\u6557\u6a19\u7684: ${failed.join(", ")}\u3002` : "";
+    setPriceStatus(`${fxText}No prices updated. ${failedText}\u8acb\u78ba\u8a8d\u80a1\u50f9\u4ee3\u7406 URL \u6216\u7a0d\u5f8c\u518d\u8a66\u3002`);
   }
 }
 
@@ -4383,7 +4397,7 @@ function quoteSymbolFor(holding) {
 
   if (market === "UK") {
     const base = symbol.replace(/\.(L|UK)$/i, "");
-    return { market, source: "stooq", symbol: `${base.toLowerCase()}.uk` };
+    return { market, source: "yahoo", symbol: `${base}.L` };
   }
 
   if (market === "US") {
@@ -4407,14 +4421,21 @@ async function fetchLatestPrice(quoteSymbol) {
 }
 
 async function fetchConfiguredProxyPrice(quoteSymbol) {
-  const proxyUrl = String(state.priceProxyUrl || globalThis.PRICE_PROXY_URL || "").trim();
-  if (!proxyUrl) return null;
-
-  try {
-    return await fetchProxyPrice(proxyUrl, quoteSymbol);
-  } catch {
-    return null;
+  for (const proxyUrl of configuredProxyUrls()) {
+    try {
+      const price = await fetchProxyPrice(proxyUrl, quoteSymbol);
+      if (Number.isFinite(price)) return price;
+    } catch {
+      // Try the next configured proxy URL.
+    }
   }
+  return null;
+}
+
+function configuredProxyUrls() {
+  return [...new Set([state.priceProxyUrl, globalThis.PRICE_PROXY_URL]
+    .map((value) => String(value || "").trim())
+    .filter(Boolean))];
 }
 
 async function fetchLocalProxyPrice(quoteSymbol) {
@@ -4956,13 +4977,15 @@ async function fetchLocalProxyHistory(symbol, startDate, endDate) {
 }
 
 async function fetchConfiguredProxyHistory(symbol, startDate, endDate) {
-  const proxyUrl = String(state.priceProxyUrl || globalThis.PRICE_PROXY_URL || "").trim();
-  if (!proxyUrl) return [];
-  try {
-    return await fetchProxyHistory(proxyUrl, symbol, startDate, endDate);
-  } catch {
-    return [];
+  for (const proxyUrl of configuredProxyUrls()) {
+    try {
+      const points = await fetchProxyHistory(proxyUrl, symbol, startDate, endDate);
+      if (points.length > 0) return points;
+    } catch {
+      // Try the next configured proxy URL.
+    }
   }
+  return [];
 }
 
 async function fetchProxyHistory(baseUrl, symbol, startDate, endDate) {
