@@ -4289,6 +4289,7 @@ async function refreshCurrentPrices() {
     return;
   }
 
+  registerPriceWatchlist(targets.map((item) => item.quoteSymbol));
   setPriceStatus("Updating FX and prices...");
 
   let fxUpdated = true;
@@ -4430,6 +4431,31 @@ async function fetchConfiguredProxyPrice(quoteSymbol) {
     }
   }
   return null;
+}
+
+function registerPriceWatchlist(quoteSymbols) {
+  const quotes = quoteSymbols
+    .filter(Boolean)
+    .map((quote) => ({ source: quote.source, symbol: quote.symbol }));
+  if (quotes.length === 0) return;
+
+  for (const proxyUrl of configuredProxyUrls()) {
+    postWatchlist(proxyUrl, quotes);
+  }
+}
+
+async function postWatchlist(baseUrl, quotes) {
+  try {
+    const root = String(baseUrl).replace(/\/$/, "");
+    await fetch(`${root}/api/watchlist`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ quotes }),
+      keepalive: true,
+    });
+  } catch {
+    // Watchlist registration is optional; price refresh still works without it.
+  }
 }
 
 function configuredProxyUrls() {
