@@ -3529,6 +3529,7 @@ const els = {
   comparisonResults: document.querySelector("#comparisonResults"),
   refreshComparisons: document.querySelector("#refreshComparisons"),
   recordSnapshot: document.querySelector("#recordSnapshot"),
+  removeTodaySnapshot: document.querySelector("#removeTodaySnapshot"),
   clearHistory: document.querySelector("#clearHistory"),
   tradeForm: document.querySelector("#tradeForm"),
   tradeType: document.querySelector("#tradeType"),
@@ -3858,7 +3859,6 @@ function render() {
   renderTradeTools();
   renderSummary(portfolio, format);
   renderComparisonControls();
-  autoRecordToday(portfolio);
   renderPerformanceChart(twdFormatter());
   setupPriceRefreshTimer();
   saveState();
@@ -5017,6 +5017,23 @@ els.recordSnapshot.addEventListener("click", () => {
   refreshComparisonSeries();
 });
 
+els.removeTodaySnapshot.addEventListener("click", () => {
+  const today = taiwanDateString(new Date());
+  const before = performanceHistory.length;
+  performanceHistory = performanceHistory.filter((item) => String(item.date || "").slice(0, 10) !== today);
+  if (performanceHistory.length === before) {
+    setPriceStatus(`沒有 ${today} 的績效紀錄可刪除。`);
+    return;
+  }
+
+  saveHistory();
+  saveState();
+  setPriceStatus(`已刪除 ${today} 的績效紀錄。`);
+  render();
+  refreshComparisonSeries();
+  syncCloudPortfolios();
+});
+
 els.clearHistory.addEventListener("click", () => {
   if (!confirm(text.clearHistoryConfirm)) return;
   performanceHistory = [];
@@ -5113,10 +5130,6 @@ function mergeCloudPerformanceHistory(cloudHistory) {
   }
   if (changed) performanceHistory.sort((a, b) => a.date.localeCompare(b.date));
   return changed;
-}
-
-function autoRecordToday(portfolio) {
-  upsertTodaySnapshot(portfolio, false);
 }
 
 function upsertTodaySnapshot(portfolio, force) {
