@@ -1,5 +1,6 @@
 ﻿const storageKey = "rebalance-site-state-v9";
 const historyKey = "rebalance-performance-history-v3";
+const autoPriceSyncKey = "rebalance-auto-price-sync-date-v1";
 
 const initialPerformanceHistory = [
   {
@@ -3484,6 +3485,7 @@ let chartHoverState = null;
 let comparisonSeries = [];
 let comparisonLoading = false;
 let comparisonRequestId = 0;
+let cloudPortfolioSyncTimer = null;
 const comparisonColors = ["#2563eb", "#dc2626", "#d97706", "#7c3aed", "#0891b2", "#db2777"];
 
 const els = {
@@ -3574,6 +3576,7 @@ function loadState() {
 function saveState() {
   syncActiveProfile();
   writeStorage(JSON.stringify(state));
+  scheduleCloudPortfolioSync();
 }
 
 function initializeProfiles(source) {
@@ -4091,8 +4094,25 @@ function addBuyTransaction(trade) {
     }
   }
 
-  state.transactions = Array.isArray(state.transactions) ? state.transactions : [];
-  state.transactions.push({
+  const valueDeltaTwd = tradeValueDeltaTwd({
+    type,
+    shares: trade.shares,
+    price: trade.price,
+    currency: trade.currency,
+    fee: trade.fee,
+    feeMode: trade.feeMode,
+  });
+  const costDeltaTwd = tradeCostDeltaTwd({
+    type,
+    shares: trade.shares,
+    price: trade.price,
+    currency: trade.currency,
+    fee: trade.fee,
+    feeMode: trade.feeMode,
+    quoteCurrency: holding.quoteCurrency,
+    saleCostBasis,
+  });
+  const transaction = {
     type,
     date,
     symbol,
@@ -4101,16 +4121,23 @@ function addBuyTransaction(trade) {
     currency: trade.currency,
     fee: trade.fee,
     feeMode: trade.feeMode,
+    quoteCurrency: holding.quoteCurrency,
     saleCostBasis,
     proceedsInPortfolioCurrency,
-  });
+    valueDeltaTwd,
+    costDeltaTwd,
+  };
+
+  state.transactions = Array.isArray(state.transactions) ? state.transactions : [];
+  state.transactions.push(transaction);
+  transaction.performanceApplied = applyTradePerformanceAdjustment(transaction, 1);
 
   els.tradeShares.value = "";
   els.tradePrice.value = "";
   if (els.tradeFee) els.tradeFee.value = "";
   els.tradeDate.value = date;
   els.tradeSymbol.value = symbol;
-  setTradeStatus(`${type === "sell" ? "\u5df2\u8ce3\u51fa" : "\u5df2\u8cb7\u5165"} ${symbol} ${trade.shares.toLocaleString("zh-TW")} \u80a1\u3002`);
+  setTradeStatus(`${type === "sell" ? "\u5df2\u8ce3\u51fa" : "\u5df2\u8cb7\u5165"} ${symbol} ${trade.shares.toLocaleString("zh-TW")} \u80a1\uff0c\u5df2\u5f9e ${date} \u8abf\u6574\u7e3e\u6548\u6b77\u53f2\u3002`);
   saveState();
   render();
 }
@@ -4150,7 +4177,66 @@ function removeBuyTransaction(index) {
   }
 
   state.transactions.splice(index, 1);
+  applyTradePerformanceAdjustment(trade, -1);
   saveState();
+}
+
+function tradeValueDeltaTwd(trade) {
+  const feeTwd = convertValueBetweenCurrencies(tradeFeeAmount(trade), trade.currency, "TWD", state.fxRate);
+  if (trade.type === "sell") {
+    return -feeTwd;
+  }
+
+  const grossAmount = numberValue(trade.shares) * numberValue(trade.price);
+  return convertValueBetweenCurrencies(grossAmount + tradeFeeAmount(trade), trade.currency, "TWD", state.fxRate);
+}
+
+function tradeCostDeltaTwd(trade) {
+  if (trade.type === "sell") {
+    const soldCost = numberValue(trade.shares) * numberValue(trade.saleCostBasis);
+    return -convertValueBetweenCurrencies(soldCost, trade.quoteCurrency || state.currency, "TWD", state.fxRate);
+  }
+
+  const grossAmount = numberValue(trade.shares) * numberValue(trade.price);
+  return convertValueBetweenCurrencies(grossAmount + tradeFeeAmount(trade), trade.currency, "TWD", state.fxRate);
+}
+
+function applyTradePerformanceAdjustment(trade, direction) {
+  const date = String(trade.date || "").slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return false;
+
+  const valueDelta = Number.isFinite(Number(trade.valueDeltaTwd)) ? Number(trade.valueDeltaTwd) : tradeValueDeltaTwd(trade);
+  const costDelta = Number.isFinite(Number(trade.costDeltaTwd)) ? Number(trade.costDeltaTwd) : tradeCostDeltaTwd(trade);
+  if (valueDelta === 0 && costDelta === 0) return false;
+
+  ensurePerformancePointForDate(date);
+  performanceHistory = performanceHistory.map((point) => {
+    const pointDate = String(point.date || "").slice(0, 10);
+    if (pointDate < date) return point;
+    return {
+      ...point,
+      value: Math.max(0, numberValue(point.value) + (direction * valueDelta)),
+      cost: Math.max(0, numberValue(point.cost) + (direction * costDelta)),
+    };
+  }).sort((left, right) => String(left.date).localeCompare(String(right.date)));
+  saveHistory();
+  return true;
+}
+
+function ensurePerformancePointForDate(date) {
+  if (performanceHistory.some((point) => String(point.date || "").slice(0, 10) === date)) return;
+
+  const history = performanceHistory
+    .filter((point) => point?.date && Number.isFinite(Number(point.value)))
+    .sort((left, right) => String(left.date).localeCompare(String(right.date)));
+  const previous = [...history].reverse().find((point) => String(point.date).slice(0, 10) < date);
+  const next = history.find((point) => String(point.date).slice(0, 10) > date);
+  const source = previous || next || { value: 0, cost: 0 };
+  performanceHistory.push({
+    date,
+    value: numberValue(source.value),
+    cost: numberValue(source.cost),
+  });
 }
 
 function tradeFeeAmount(trade) {
@@ -4442,6 +4528,65 @@ function registerPriceWatchlist(quoteSymbols) {
   for (const proxyUrl of configuredProxyUrls()) {
     postWatchlist(proxyUrl, quotes);
   }
+}
+
+function scheduleCloudPortfolioSync() {
+  if (cloudPortfolioSyncTimer) clearTimeout(cloudPortfolioSyncTimer);
+  cloudPortfolioSyncTimer = setTimeout(() => {
+    syncCloudPortfolios();
+  }, 1200);
+}
+
+async function syncCloudPortfolios() {
+  const payload = buildCloudPortfoliosPayload();
+  if (payload.portfolios.length === 0) return;
+
+  for (const proxyUrl of configuredProxyUrls()) {
+    try {
+      const root = String(proxyUrl).replace(/\/$/, "");
+      await fetch(`${root}/api/portfolio`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+        keepalive: true,
+      });
+    } catch {
+      // Cloud portfolio sync is optional; local browser data remains the source while offline.
+    }
+  }
+}
+
+function buildCloudPortfoliosPayload() {
+  syncActiveProfile();
+  const profiles = Array.isArray(state.profiles) && state.profiles.length > 0 ? state.profiles : [state];
+  return {
+    portfolios: profiles.map((profile) => {
+      const currency = profile.currency || state.currency || defaultState.currency;
+      return {
+        id: profile.id || "default",
+        name: profile.name || state.profileName || defaultState.profileName,
+        currency,
+        fxRate: numberValue(profile.fxRate || state.fxRate || defaultState.fxRate),
+        cash: numberValue(profile.cash),
+        history: Array.isArray(profile.performanceHistory) ? profile.performanceHistory : performanceHistory,
+        holdings: (profile.holdings || []).map((holding) => {
+          const normalized = normalizeHoldingCurrency(holding, currency);
+          const quote = quoteSymbolFor(normalized);
+          if (!quote) return null;
+          return {
+            symbol: normalized.symbol,
+            name: normalized.name,
+            market: normalized.market,
+            shares: numberValue(normalized.shares),
+            avgCost: numberValue(normalized.avgCost),
+            quoteCurrency: normalized.quoteCurrency,
+            quoteSource: quote.source,
+            quoteSymbol: quote.symbol,
+          };
+        }).filter(Boolean),
+      };
+    }).filter((profile) => profile.holdings.length > 0),
+  };
 }
 
 async function postWatchlist(baseUrl, quotes) {
@@ -4882,6 +5027,93 @@ els.clearHistory.addEventListener("click", () => {
 
 render();
 refreshComparisonSeries();
+scheduleOpeningPriceSync();
+syncCloudPortfolioHistory();
+ensureHistoricalTradesAreApplied();
+
+function ensureHistoricalTradesAreApplied() {
+  const transactions = Array.isArray(state.transactions) ? state.transactions : [];
+  let changed = false;
+  for (const trade of transactions) {
+    if (trade.performanceApplied) continue;
+    const date = String(trade.date || "").slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) continue;
+
+    const hasTradeDatePoint = performanceHistory.some((point) => String(point.date || "").slice(0, 10) === date);
+    if (!hasTradeDatePoint) {
+      trade.valueDeltaTwd = Number.isFinite(Number(trade.valueDeltaTwd)) ? Number(trade.valueDeltaTwd) : tradeValueDeltaTwd(trade);
+      trade.costDeltaTwd = Number.isFinite(Number(trade.costDeltaTwd)) ? Number(trade.costDeltaTwd) : tradeCostDeltaTwd(trade);
+      trade.performanceApplied = applyTradePerformanceAdjustment(trade, 1);
+      changed = trade.performanceApplied || changed;
+    } else {
+      trade.performanceApplied = true;
+      changed = true;
+    }
+  }
+
+  if (changed) {
+    saveState();
+    render();
+    refreshComparisonSeries();
+    syncCloudPortfolios();
+  }
+}
+
+function scheduleOpeningPriceSync() {
+  const today = taiwanDateString(new Date());
+  try {
+    if (localStorage.getItem(autoPriceSyncKey) === today) return;
+  } catch {
+    // Continue without the once-per-day guard if storage is unavailable.
+  }
+
+  setTimeout(async () => {
+    try {
+      await refreshCurrentPrices();
+      localStorage.setItem(autoPriceSyncKey, today);
+    } catch {
+      // Manual refresh remains available if opening sync fails.
+    }
+  }, 800);
+}
+
+async function syncCloudPortfolioHistory() {
+  const profileId = encodeURIComponent(state.activeProfileId || "default");
+  for (const proxyUrl of configuredProxyUrls()) {
+    try {
+      const root = String(proxyUrl).replace(/\/$/, "");
+      const response = await fetch(`${root}/api/portfolio/history?id=${profileId}`, { cache: "no-store" });
+      if (!response.ok) continue;
+      const data = await response.json();
+      const cloudHistory = Array.isArray(data.history) ? data.history : [];
+      if (mergeCloudPerformanceHistory(cloudHistory)) {
+        saveHistory();
+        render();
+        refreshComparisonSeries();
+      }
+      return;
+    } catch {
+      // Try the next configured proxy URL.
+    }
+  }
+}
+
+function mergeCloudPerformanceHistory(cloudHistory) {
+  let changed = false;
+  for (const item of cloudHistory) {
+    if (!item?.date || !Number.isFinite(Number(item.value))) continue;
+    const existing = performanceHistory.find((point) => point.date === item.date);
+    if (existing) continue;
+    performanceHistory.push({
+      date: item.date,
+      value: Number(item.value),
+      cost: Number.isFinite(Number(item.cost)) ? Number(item.cost) : 0,
+    });
+    changed = true;
+  }
+  if (changed) performanceHistory.sort((a, b) => a.date.localeCompare(b.date));
+  return changed;
+}
 
 function autoRecordToday(portfolio) {
   upsertTodaySnapshot(portfolio, false);
