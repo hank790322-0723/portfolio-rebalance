@@ -4230,12 +4230,12 @@ function ensurePerformancePointForDate(date) {
     .filter((point) => point?.date && Number.isFinite(Number(point.value)))
     .sort((left, right) => String(left.date).localeCompare(String(right.date)));
   const previous = [...history].reverse().find((point) => String(point.date).slice(0, 10) < date);
-  const next = history.find((point) => String(point.date).slice(0, 10) > date);
-  const source = previous || next || { value: 0, cost: 0 };
+  const source = previous || { value: 0, cost: 0 };
   performanceHistory.push({
     date,
     value: numberValue(source.value),
     cost: numberValue(source.cost),
+    source: "trade",
   });
 }
 
@@ -5047,6 +5047,7 @@ refreshComparisonSeries();
 scheduleOpeningPriceSync();
 syncCloudPortfolioHistory();
 ensureHistoricalTradesAreApplied();
+repairLegacyFirstTradeDateSnapshot();
 
 function ensureHistoricalTradesAreApplied() {
   const transactions = Array.isArray(state.transactions) ? state.transactions : [];
@@ -5074,6 +5075,49 @@ function ensureHistoricalTradesAreApplied() {
     refreshComparisonSeries();
     syncCloudPortfolios();
   }
+}
+
+function repairLegacyFirstTradeDateSnapshot() {
+  const transactions = Array.isArray(state.transactions) ? state.transactions : [];
+  const datedTrades = transactions
+    .map((trade) => ({ trade, date: String(trade.date || "").slice(0, 10) }))
+    .filter((item) => /^\d{4}-\d{2}-\d{2}$/.test(item.date))
+    .sort((left, right) => left.date.localeCompare(right.date));
+  if (datedTrades.length === 0) return;
+
+  const firstTradeDate = datedTrades[0].date;
+  const history = performanceHistory
+    .filter((point) => point?.date && Number.isFinite(Number(point.value)))
+    .sort((left, right) => String(left.date).localeCompare(String(right.date)));
+  const firstPoint = history[0];
+  if (!firstPoint || String(firstPoint.date || "").slice(0, 10) !== firstTradeDate) return;
+
+  const exactFirstDatePoint = performanceHistory.find((point) => point.date === firstTradeDate);
+  if (!exactFirstDatePoint) return;
+
+  const totals = datedTrades
+    .filter((item) => item.date <= firstTradeDate)
+    .reduce((sum, item) => ({
+      value: sum.value + (Number.isFinite(Number(item.trade.valueDeltaTwd)) ? Number(item.trade.valueDeltaTwd) : tradeValueDeltaTwd(item.trade)),
+      cost: sum.cost + (Number.isFinite(Number(item.trade.costDeltaTwd)) ? Number(item.trade.costDeltaTwd) : tradeCostDeltaTwd(item.trade)),
+    }), { value: 0, cost: 0 });
+
+  if (Math.abs(numberValue(exactFirstDatePoint.value) - totals.value) < 1 && Math.abs(numberValue(exactFirstDatePoint.cost) - totals.cost) < 1) return;
+
+  performanceHistory = performanceHistory.map((point) => {
+    if (point.date !== firstTradeDate) return point;
+    return {
+      ...point,
+      value: Math.max(0, totals.value),
+      cost: Math.max(0, totals.cost),
+      source: point.source || "trade",
+    };
+  });
+  saveHistory();
+  saveState();
+  render();
+  refreshComparisonSeries();
+  syncCloudPortfolios();
 }
 
 function scheduleOpeningPriceSync() {
